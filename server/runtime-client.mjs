@@ -198,6 +198,106 @@ export class RuntimeClient {
     return this.rpc.sendRequest(hostToSubReq, method, args)
   }
 
+  controllerReady(project) {
+    if (project.config.controller === '$fixed') return !!project.config.vscFixed?.image
+    const controller = project.bundle.content.object.controller?.find(item => item.name === project.config.controller)
+    if (!controller) return false
+    if (controller.type === 'Adb') {
+      const value = project.config.adb
+      return !!value?.adb_path && !!value?.address && value.screencap !== undefined &&
+        value.input !== undefined && value.config !== undefined
+    }
+    if (controller.type === 'Win32') return !!project.config.win32?.hwnd
+    if (controller.type === 'Gamepad') return !!project.config.gamepad?.hwnd
+    if (controller.type === 'PlayCover') return !!project.config.playcover?.address
+    if (controller.type === 'Linux') return !!project.config.linux
+    return false
+  }
+
+  async discoverController(project, name) {
+    if (name === '$fixed') {
+      return {
+        config_key: 'vscFixed',
+        fields: [{ key: 'image', label: 'Absolute image path', required: true }]
+      }
+    }
+    const controller = project.bundle.content.object.controller?.find(item => item.name === name)
+    if (!controller) throw new Error(`Unknown controller ${name}`)
+    if (controller.type === 'Adb') {
+      await this.ensure()
+      const devices = await this.request('refreshAdb', project.config.adb?.adb_path)
+      return {
+        items: devices.map(device => ({
+          label: `${device[0]} — ${device[2]}`,
+          config: {
+            adb: {
+              adb_path: device[1],
+              address: device[2],
+              screencap: device[3],
+              input: device[4],
+              config: JSON.parse(device[5])
+            }
+          }
+        }))
+      }
+    }
+    if (controller.type === 'Win32' || controller.type === 'Gamepad') {
+      await this.ensure()
+      const desktop = controller.type === 'Win32' ? controller.win32 : controller.gamepad
+      const classRegex = desktop?.class_regex ? new RegExp(desktop.class_regex) : null
+      const windowRegex = desktop?.window_regex ? new RegExp(desktop.window_regex) : null
+      const devices = (await this.request('refreshDesktop')).filter(device =>
+        (!classRegex || classRegex.test(device[1])) && (!windowRegex || windowRegex.test(device[2])))
+      const key = controller.type === 'Win32' ? 'win32' : 'gamepad'
+      return {
+        items: devices.map(device => ({
+          label: `${device[2]} — ${device[1]}`,
+          config: { [key]: { hwnd: device[0] } }
+        }))
+      }
+    }
+    if (controller.type === 'PlayCover') {
+      return {
+        config_key: 'playcover',
+        fields: [{ key: 'address', label: 'PlayCover address (host:port)', required: true }]
+      }
+    }
+    if (controller.type === 'Linux') {
+      await this.ensure()
+      const meta = controller.linux ?? {}
+      const screencap = meta.screencap ?? 'Wlr'
+      const input = meta.input ?? 'Wlr'
+      if (screencap === 'PipeWire' && meta.pipewire_source === 'Portal') {
+        throw new Error('Linux PipeWire Portal controllers are not supported by the upstream Maa server')
+      }
+      const fields = []
+      if ((screencap === 'PipeWire' && meta.pipewire_source !== 'Portal') || input === 'Libei') {
+        const instances = await this.request('refreshGamescope')
+        fields.push({
+          key: 'display_no',
+          label: 'Gamescope display',
+          items: instances.map(item => ({ label: `Display ${item[0]} — ${item[2]}`, value: item[0] }))
+        })
+      }
+      if (screencap === 'Wlr' || input === 'Wlr') {
+        const compositors = await this.request('refreshWlrCompositor')
+        fields.push({
+          key: 'wlr_socket_path',
+          label: 'Wayland compositor',
+          items: compositors.map(item => ({ label: `${item[2]} — ${item[1]}`, value: item[1] }))
+        })
+      }
+      if (input === 'UInput') {
+        fields.push(
+          { key: 'uinput_screen_width', label: 'UInput screen width', number: true },
+          { key: 'uinput_screen_height', label: 'UInput screen height', number: true }
+        )
+      }
+      return { config_key: 'linux', fields }
+    }
+    throw new Error(`Unsupported controller type ${controller.type}`)
+  }
+
   startAgent(exec, args, cwd, env) {
     const id = randomUUID()
     const child = spawn(exec, args, {

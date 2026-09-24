@@ -116,3 +116,7 @@ Run `Code Action` and choose
 `Run Maa task`. Output opens in a small log window. Use `:MaaPipelineStop` to
 stop it. The first run downloads MaaFramework; open the target game or app when
 the selected controller needs it.
+
+If no controller is configured, running a task opens the selector. Use
+`:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file
+to open it directly.

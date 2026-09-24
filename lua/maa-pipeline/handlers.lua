@@ -3,10 +3,27 @@ local methods = {
   show_references = "maa-pipeline/showReferences",
   show_text = "maa-pipeline/showText",
   runtime_log = "maa-pipeline/runtimeLog",
+  configure_controller = "maa-pipeline/configureController",
   request_input = "maa-pipeline/requestInput",
 }
 
 return {
+  [methods.configure_controller] = function(_, result, ctx)
+    vim.schedule(function()
+      local client = vim.lsp.get_client_by_id(ctx.client_id)
+      if not client then
+        return
+      end
+      require("maa-pipeline.controller").select(client, result.root, result.controller, function()
+        if result.task then
+          client:request("workspace/executeCommand", {
+            command = "maa-pipeline.runTask",
+            arguments = { result.root, result.task },
+          })
+        end
+      end)
+    end)
+  end,
   [methods.trigger_completion] = function()
     vim.schedule(function()
       if vim.lsp.completion and vim.lsp.completion.get then

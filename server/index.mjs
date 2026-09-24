@@ -221,7 +221,37 @@ connection.onExecuteCommand(async params => {
   if (!project) return null
   await project.refresh()
 
-  if (params.command === commands.showReferences) {
+  if (params.command === commands.listControllers) {
+    const controllers = (project.bundle.content.object.controller ?? []).map(controller => ({
+      name: controller.name,
+      type: controller.type,
+      current: controller.name === project.config.controller
+    }))
+    controllers.push({ name: '$fixed', type: 'Fixed Image', current: project.config.controller === '$fixed' })
+    return controllers
+  } else if (params.command === commands.discoverController) {
+    return runtime.discoverController(project, args[1])
+  } else if (params.command === commands.configureController) {
+    const controller = args[1]
+    const resources = project.bundle.content.object.resource ?? []
+    const compatible = resource => controller === '$fixed' ||
+      !resource.controller || resource.controller.includes(controller)
+    const resource = resources.find(item => item.name === project.resource && compatible(item)) ??
+      resources.find(compatible)
+    if (!resource) throw new Error(`No resource supports controller ${controller}`)
+    const values = { controller, resource: resource.name, ...(args[2] ?? {}) }
+    const edit = await configWorkspaceEdit(project, values)
+    const result = await connection.workspace.applyEdit(edit)
+    if (!result.applied) return false
+    Object.assign(project.config, values)
+    project.controller = controller
+    project.resource = resource.name
+    await project.bundle.switchActive(project.controller, project.resource)
+    await publish(project)
+    return true
+  } else if (params.command === commands.selectController) {
+    connection.sendNotification(notifications.configureController, { root: project.root, controller: args[1] })
+  } else if (params.command === commands.showReferences) {
     const [, uri, position] = args
     const file = fileUriPath(uri)
     if (!file || !position) return null
@@ -232,6 +262,10 @@ connection.onExecuteCommand(async params => {
     const value = evaluatedTask(project, args[1])
     if (value) connection.sendNotification(notifications.showText, { title: args[1], content: value })
   } else if (params.command === commands.runTask) {
+    if (!runtime.controllerReady(project)) {
+      connection.sendNotification(notifications.configureController, { root: project.root, task: args[1] })
+      return null
+    }
     void runtime.run(project, args[1]).catch(error => {
       runtime.notify('error', error instanceof Error ? error.message : String(error), args[1])
     })

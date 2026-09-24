@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { CodeActionKind } from 'vscode-languageserver/node'
-import { modify } from 'jsonc-parser'
+import { applyEdits, modify } from 'jsonc-parser'
 import { t } from '@nekosu/maa-locale'
 import { extractTaskRef } from '@nekosu/maa-pipeline-manager'
 
@@ -15,6 +15,10 @@ export const commands = {
   evaluateTask: 'maa-pipeline.evaluateTask',
   runTask: 'maa-pipeline.runTask',
   stopTask: 'maa-pipeline.stopTask',
+  selectController: 'maa-pipeline.selectController',
+  listControllers: 'maa-pipeline.listControllers',
+  discoverController: 'maa-pipeline.discoverController',
+  configureController: 'maa-pipeline.configureController',
   switchConfig: 'maa-pipeline.switchConfig',
   extractLocale: 'maa-pipeline.extractLocale'
 }
@@ -24,6 +28,7 @@ export const notifications = {
   showReferences: 'maa-pipeline/showReferences',
   showText: 'maa-pipeline/showText',
   runtimeLog: 'maa-pipeline/runtimeLog',
+  configureController: 'maa-pipeline/configureController',
   requestInput: 'maa-pipeline/requestInput'
 }
 
@@ -116,6 +121,19 @@ export function codeActions(project, document, requestedRange) {
   const begin = document.offsetAt(requestedRange.start)
   const end = document.offsetAt(requestedRange.end)
   const result = []
+  for (const decl of project.bundle.info.decls) {
+    if (decl.file !== normalizedFile || decl.type !== 'interface.controller') continue
+    if (decl.location.offset > end || decl.location.offset + decl.location.length < begin) continue
+    const title = `Select Maa controller: ${decl.name}`
+    result.push({
+      title,
+      command: {
+        title,
+        command: commands.selectController,
+        arguments: [project.root, decl.name]
+      }
+    })
+  }
   if (!project.bundle.maa && !isDefault) {
     for (const [task, infos] of Object.entries(layer.tasks)) {
       const info = infos.find(item => item.file === normalizedFile &&
@@ -203,17 +221,21 @@ export async function configWorkspaceEdit(project, key, value) {
   const previous = await project.loader.get(file)
   const text = previous ?? '{}\n'
   const document = textDocument(file, text)
-  const edits = modify(text, [key], value, {
-    formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' }
-  }).map(edit => ({
-    range: {
-      start: document.positionAt(edit.offset),
-      end: document.positionAt(edit.offset + edit.length)
-    },
-    newText: edit.content
-  }))
+  const changes = typeof key === 'object' ? key : { [key]: value }
+  let updated = text
+  for (const [name, next] of Object.entries(changes)) {
+    updated = applyEdits(updated, modify(updated, [name], next, {
+      formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' }
+    }))
+  }
+  const edits = [{
+    range: previous == null
+      ? { start: document.positionAt(0), end: document.positionAt(0) }
+      : { start: document.positionAt(0), end: document.positionAt(text.length) },
+    newText: updated
+  }]
   const uri = pathUri(file)
-  return previous === undefined
+  return previous == null
     ? {
         documentChanges: [
           { kind: 'create', uri },

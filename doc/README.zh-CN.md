@@ -112,3 +112,6 @@ vim.lsp.enable("maa_pipeline")
 使用 `Code Action` 执行光标选中的
 运行日志会显示在一个小窗口中，使用 `:MaaPipelineStop` 停止任务
 首次运行会下载 MaaFramework；所选控制器需要目标游戏或应用时，请先打开它
+
+没有控制器配置时，运行任务会自动打开选择器
+也可以在 `interface.json/jsonc` 或 Pipeline 文件中使用 `:MaaPipelineSelectController`
