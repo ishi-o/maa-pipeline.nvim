@@ -1,0 +1,24 @@
+{
+  "name": "maa-pipeline.nvim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "esbuild server/index.mjs --bundle --packages=external --platform=node --format=esm --outfile=server/dist/maa-pipeline-lsp.mjs",
+    "stylecheck": "npm run check",
+    "check": "node --check server/index.mjs && node --check server/project.mjs && node --check server/features.mjs && node --check server/interactive.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@nekosu/maa-locale": "1.2.0",
+    "@nekosu/maa-pipeline-manager": "1.1.0",
+    "jsonc-parser": "^3.3.1",
+    "vscode-languageserver": "^10.1.1",
+    "vscode-languageserver-textdocument": "^1.0.14",
+    "vscode-uri": "^3.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
