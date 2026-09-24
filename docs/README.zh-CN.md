@@ -1,6 +1,6 @@
 # maa-pipeline.nvim
 
-中文 | [English](README.md)
+中文 | [English](https://github.com/ishi-o/maa-pipeline.nvim/blob/main/docs/README.md)
 
 基于 [Maa Support Extension](https://github.com/neko-para/maa-support-extension)
 中的解析器和索引，为 Neovim 提供 MaaFramework Pipeline 支持

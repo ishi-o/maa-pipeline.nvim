@@ -1,6 +1,6 @@
 # maa-pipeline.nvim
 
-[中文](README.zh-CN.md) | English
+[中文](https://github.com/ishi-o/maa-pipeline.nvim/blob/main/docs/README.zh-CN.md) | English
 
 Neovim support for MaaFramework pipelines, reusing the parser and index from
 [Maa Support Extension](https://github.com/neko-para/maa-support-extension).

@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "doc/*.md"
+      - "docs/*.md"
       - ".github/workflows/vimdoc.yml"
 
 concurrency:
@@ -43,7 +43,7 @@ jobs:
           rm -f doc/maa-pipeline.nvim.txt doc/tags
           GITHUB_ACTIONS=false "$RUNNER_TEMP/panvimdoc/panvimdoc.sh" \
             --project-name maa-pipeline.nvim \
-            --input-file doc/README.md \
+            --input-file docs/README.md \
             --scripts-dir "$RUNNER_TEMP/panvimdoc/scripts" \
             --vim-version 'NVIM v0.11.0'
           nvim --headless -u NONE -i NONE -n \
@@ -61,4 +61,4 @@ jobs:
             doc/tags
           commit-message: "docs: update Vimdoc"
           title: "docs: update Vimdoc"
-          body: Generated from `doc/README.md` by panvimdoc.
+          body: Generated from `docs/README.md` by panvimdoc.
