@@ -2,8 +2,6 @@
 
 [中文](README.zh-CN.md) | English
 
-For all Maa projects.
-
 Neovim support for MaaFramework pipelines, reusing the parser and index from
 [Maa Support Extension](https://github.com/neko-para/maa-support-extension).
 
@@ -22,11 +20,10 @@ color support for Maa pipeline files.
   build = "npm install --include=dev && npm run build",
   config = function()
     require("maa-pipeline.nvim").setup()
+    vim.lsp.enable("maa_pipeline")
   end,
 }
 ```
-
-Requires Node.js and npm.
 
 </details>
 
@@ -54,10 +51,8 @@ vim.pack.add({
 })
 
 require("maa-pipeline.nvim").setup()
+vim.lsp.enable("maa_pipeline")
 ```
-
-Requires Node.js, npm, and Git. The hook builds the server after the first
-install and after updates.
 
 </details>
 
@@ -66,25 +61,41 @@ install and after updates.
 The default configuration is:
 
 ```lua
-require("maa-pipeline.nvim").setup({
-  cmd = nil, -- LSP command; nil uses the bundled server
+require("maa-pipeline.nvim").setup() -- register the bundled default config; no options are accepted
+
+vim.lsp.config("maa_pipeline", {
+  cmd = nil, -- nil keeps the bundled Node.js command; set a list to use another command
   filetypes = { "maa-pipeline.jsonc" }, -- compound filetype; every Maa JSON file uses JSONC
   root_markers = { "interface.json", "interface.jsonc", ".git" }, -- project root markers
-  mode = "auto", -- "auto": detect src/MaaCore; "maa": MAA syntax; "framework": MaaFramework syntax
-  locale = "en", -- "en": English; "zh": Chinese diagnostics and hover text
-  enabled = true, -- enable the LSP; filetype detection remains active when false
+  init_options = {
+    mode = "auto", -- "auto": detect src/MaaCore; "maa": MAA syntax; "framework": MaaFramework syntax
+    locale = "en", -- "en": English; "zh": Chinese diagnostics and hover text
+  },
+  capabilities = nil, -- nil uses Neovim defaults; provide extended client capabilities when needed
   on_attach = nil, -- called when the LSP attaches to a buffer
-  on_launch = nil, -- function({ root, task }); runs a task selected through Code Lens
-  handlers = {}, -- overrides custom LSP notification handlers by method name
-  init_options = {}, -- extra LSP initialization options
+  handlers = {}, -- custom method handlers are merged with the bundled handlers
 })
+
+vim.lsp.enable("maa_pipeline") -- enable after applying overrides
 ```
 
 For example, to force Maa mode and Chinese messages:
 
 ```lua
-require("maa-pipeline.nvim").setup({
-  mode = "maa",
-  locale = "zh",
+require("maa-pipeline.nvim").setup()
+
+local capabilities = vim.lsp.protocol.make_client_capabilities()
+capabilities.textDocument.completion.completionItem.snippetSupport = true -- advertise snippet completion support
+
+vim.lsp.config("maa_pipeline", {
+  capabilities = capabilities, -- replace this with capabilities from blink.cmp, nvim-cmp, or another client
+  on_attach = function(client, bufnr) -- customize the attached client and buffer here
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition, { buffer = bufnr })
+  end,
+  init_options = {
+    mode = "maa",
+    locale = "zh",
+  },
 })
+vim.lsp.enable("maa_pipeline")
 ```

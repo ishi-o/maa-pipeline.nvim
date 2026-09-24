@@ -5,6 +5,7 @@ return {
   cmd = { "node", plugin_root .. "/server/dist/maa-pipeline-lsp.mjs" },
   filetypes = { "maa-pipeline.jsonc" },
   root_markers = { "interface.json", "interface.jsonc", ".git" },
+  handlers = require("maa-pipeline.handlers"),
   init_options = {
     mode = "auto",
     locale = "en",
