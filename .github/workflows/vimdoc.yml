@@ -1,0 +1,64 @@
+name: Vimdoc
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "doc/*.md"
+      - ".github/workflows/vimdoc.yml"
+
+concurrency:
+  group: vimdoc-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate:
+    name: Generate Vimdoc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: pandoc/actions/setup@v1
+        with:
+          version: 3.1.11
+
+      - name: Install panvimdoc and Neovim
+        run: |
+          git clone --depth 1 --branch v4.0.1 \
+            https://github.com/kdheepak/panvimdoc.git \
+            "$RUNNER_TEMP/panvimdoc"
+          sudo apt-get update
+          sudo apt-get install --yes neovim
+
+      - name: Generate Vimdoc and help tags
+        run: |
+          rm -f doc/maa-pipeline.nvim.txt doc/tags
+          GITHUB_ACTIONS=false "$RUNNER_TEMP/panvimdoc/panvimdoc.sh" \
+            --project-name maa-pipeline.nvim \
+            --input-file doc/README.md \
+            --scripts-dir "$RUNNER_TEMP/panvimdoc/scripts" \
+            --vim-version 'NVIM v0.11.0'
+          nvim --headless -u NONE -i NONE -n \
+            -c 'helptags doc/' \
+            -c 'quit'
+
+      - name: Create documentation PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: automation/vimdoc
+          base: main
+          delete-branch: true
+          add-paths: |
+            doc/maa-pipeline.nvim.txt
+            doc/tags
+          commit-message: "docs: update Vimdoc"
+          title: "docs: update Vimdoc"
+          body: Generated from `doc/README.md` by panvimdoc.

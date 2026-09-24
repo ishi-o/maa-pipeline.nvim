@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "build": "esbuild server/index.mjs --bundle --packages=external --platform=node --format=esm --outfile=server/dist/maa-pipeline-lsp.mjs",
+    "build": "esbuild server/index.mjs --bundle --minify --platform=node --format=esm --main-fields=module,main --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=server/dist/maa-pipeline-lsp.mjs",
     "stylecheck": "npm run check",
     "check": "node --check server/index.mjs && node --check server/project.mjs && node --check server/features.mjs && node --check server/interactive.mjs",
     "test": "node --test test/*.test.mjs"
