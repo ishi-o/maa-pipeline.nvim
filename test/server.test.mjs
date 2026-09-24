@@ -6,7 +6,7 @@ import path from 'node:path'
 
 import { completion, definition, nodeRange, syntaxDiagnostics, textDocument } from '../server/features.mjs'
 import { parse, printParseErrorCode } from 'jsonc-parser'
-import { codeLenses } from '../server/interactive.mjs'
+import { codeActions, codeLenses } from '../server/interactive.mjs'
 import { MaaProject, normalizePath, pathUri } from '../server/project.mjs'
 
 test('converts upstream parser offsets to LSP ranges', () => {
@@ -65,9 +65,9 @@ test('uses the upstream manager for MaaFramework language features', async t => 
   assert.ok(completion(project, document, position).some(item => item.label === 'End'))
   assert.equal((await definition(project, document, position)).length, 1)
   assert.deepEqual(codeLenses(project, document).map(item => item.command.command), [
-    'maa-pipeline.launchTask',
     'maa-pipeline.showReferences',
-    'maa-pipeline.launchTask',
     'maa-pipeline.showReferences'
   ])
+  const actionPosition = document.positionAt(source.indexOf('"Start"') + 2)
+  assert.equal(codeActions(project, document, { start: actionPosition, end: actionPosition })[0].command.command, 'maa-pipeline.runTask')
 })

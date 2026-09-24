@@ -13,7 +13,8 @@ export const commands = {
   triggerCompletion: 'maa-pipeline.triggerCompletion',
   showReferences: 'maa-pipeline.showReferences',
   evaluateTask: 'maa-pipeline.evaluateTask',
-  launchTask: 'maa-pipeline.launchTask',
+  runTask: 'maa-pipeline.runTask',
+  stopTask: 'maa-pipeline.stopTask',
   switchConfig: 'maa-pipeline.switchConfig',
   extractLocale: 'maa-pipeline.extractLocale'
 }
@@ -22,7 +23,7 @@ export const notifications = {
   triggerCompletion: 'maa-pipeline/triggerCompletion',
   showReferences: 'maa-pipeline/showReferences',
   showText: 'maa-pipeline/showText',
-  launchTask: 'maa-pipeline/launchTask',
+  runtimeLog: 'maa-pipeline/runtimeLog',
   requestInput: 'maa-pipeline/requestInput'
 }
 
@@ -72,7 +73,6 @@ export function codeLenses(project, document) {
       if (project.bundle.maa) {
         result.push(lens(range, t('maa.pipeline.codelens.eval-task'), commands.evaluateTask, [project.root, task]))
       } else {
-        result.push(lens(range, t('maa.pipeline.codelens.launch'), commands.launchTask, [project.root, task]))
         result.push(lens(range, t('maa.pipeline.codelens.refs', `${counts.get(task) ?? 0}`), commands.showReferences, [project.root, document.uri, position]))
       }
     }
@@ -112,18 +112,35 @@ export function codeActions(project, document, requestedRange) {
   if (!file) return []
   const located = project.bundle.locateLayer(file)
   if (!located) return []
-  const [layer, normalizedFile] = located
+  const [layer, normalizedFile, isDefault] = located
   const begin = document.offsetAt(requestedRange.start)
   const end = document.offsetAt(requestedRange.end)
+  const result = []
+  if (!project.bundle.maa && !isDefault) {
+    for (const [task, infos] of Object.entries(layer.tasks)) {
+      const info = infos.find(item => item.file === normalizedFile &&
+        item.prop.offset <= end && item.prop.offset + item.prop.length >= begin)
+      if (!info) continue
+      const title = `Run Maa task: ${task}`
+      result.push({
+        title,
+        command: {
+          title,
+          command: commands.runTask,
+          arguments: [project.root, task]
+        }
+      })
+    }
+  }
   const ref = layer.mergedRefs.find(info =>
     info.file === normalizedFile &&
     info.type === 'task.can_locale' &&
     info.location.offset <= end &&
     info.location.offset + info.location.length >= begin
   )
-  if (!ref) return []
+  if (!ref) return result
   const title = t('maa.pipeline.codeaction.extract-locale')
-  return [{
+  result.push({
     title,
     kind: CodeActionKind.RefactorExtract,
     command: {
@@ -137,7 +154,8 @@ export function codeActions(project, document, requestedRange) {
         value: ref.target
       }]
     }
-  }]
+  })
+  return result
 }
 
 export async function localeWorkspaceEdit(project, request, key) {

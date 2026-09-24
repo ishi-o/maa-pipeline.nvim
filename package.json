@@ -5,15 +5,19 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "build": "esbuild server/index.mjs --bundle --minify --platform=node --format=esm --main-fields=module,main --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=server/dist/maa-pipeline-lsp.mjs",
+    "build": "node scripts/build.mjs",
     "stylecheck": "npm run check",
-    "check": "node --check server/index.mjs && node --check server/project.mjs && node --check server/features.mjs && node --check server/interactive.mjs",
+    "check": "node --check server/index.mjs && node --check server/project.mjs && node --check server/features.mjs && node --check server/interactive.mjs && node --check server/runtime-client.mjs && node --check server/runtime.mjs && node --check scripts/build.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@nekosu/maa-locale": "1.2.0",
     "@nekosu/maa-pipeline-manager": "1.1.0",
+    "@nekosu/maa-server": "0.3.0",
+    "@nekosu/maa-server-proto": "0.3.0",
+    "@nekosu/maa-version-manager": "1.1.0",
     "jsonc-parser": "^3.3.1",
+    "vscode-jsonrpc": "8.2.1",
     "vscode-languageserver": "^10.1.1",
     "vscode-languageserver-textdocument": "^1.0.14",
     "vscode-uri": "^3.1.0"

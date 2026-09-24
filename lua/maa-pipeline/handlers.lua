@@ -2,7 +2,7 @@ local methods = {
   trigger_completion = "maa-pipeline/triggerCompletion",
   show_references = "maa-pipeline/showReferences",
   show_text = "maa-pipeline/showText",
-  launch_task = "maa-pipeline/launchTask",
+  runtime_log = "maa-pipeline/runtimeLog",
   request_input = "maa-pipeline/requestInput",
 }
 
@@ -35,11 +35,28 @@ return {
       vim.api.nvim_set_current_buf(buffer)
     end)
   end,
-  [methods.launch_task] = function()
-    vim.notify(
-      "Override the maa-pipeline/launchTask handler with vim.lsp.config() to run Maa tasks",
-      vim.log.levels.WARN
-    )
+  [methods.runtime_log] = function(_, result, ctx)
+    vim.schedule(function()
+      local name = "maa-pipeline://runtime"
+      local buffer = vim.fn.bufnr(name)
+      if buffer < 0 then
+        buffer = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buffer, name)
+        vim.bo[buffer].buftype = "nofile"
+        vim.bo[buffer].bufhidden = "hide"
+        vim.bo[buffer].swapfile = false
+        vim.bo[buffer].filetype = "log"
+      end
+      vim.b[buffer].maa_pipeline_client_id = ctx.client_id
+      local message = string.format("[%s] %s", (result.level or "info"):upper(), result.message or "")
+      vim.bo[buffer].modifiable = true
+      vim.api.nvim_buf_set_lines(buffer, -1, -1, false, { message })
+      vim.bo[buffer].modifiable = false
+      if vim.fn.bufwinid(buffer) < 0 then
+        vim.cmd("botright 10split")
+        vim.api.nvim_win_set_buf(0, buffer)
+      end
+    end)
   end,
   [methods.request_input] = function(_, result, ctx)
     vim.schedule(function()

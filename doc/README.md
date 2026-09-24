@@ -7,7 +7,8 @@ Neovim support for MaaFramework pipelines, reusing the parser and index from
 
 It provides filetype detection, completion, hover, navigation, diagnostics,
 Code Lens, code actions, inlay hints, document links, workspace symbols, and
-color support for Maa pipeline files.
+color support for Maa pipeline files. MaaFramework tasks can also run directly
+from Neovim.
 
 ## Install
 
@@ -70,6 +71,15 @@ vim.lsp.config("maa_pipeline", {
   init_options = {
     mode = "auto", -- "auto": detect src/MaaCore; "maa": MAA syntax; "framework": MaaFramework syntax
     locale = "en", -- "en": English; "zh": Chinese diagnostics and hover text
+    runtime = {
+      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework downloads and logs
+      version = "5.13.0", -- MaaFramework version used to run tasks
+      registry = "https://registry.npmjs.org", -- npm registry used for MaaFramework downloads
+      timeout = 60000, -- controller and Agent connection timeout in milliseconds; -1 disables it
+      debug_mode = true, -- write MaaFramework debug logs
+      save_draw = false, -- save recognition drawings
+      save_on_error = true, -- save recognition data when a task fails
+    },
   },
   capabilities = nil, -- nil uses Neovim defaults; provide extended client capabilities when needed
   on_attach = nil, -- called when the LSP attaches to a buffer
@@ -99,3 +109,10 @@ vim.lsp.config("maa_pipeline", {
 })
 vim.lsp.enable("maa_pipeline")
 ```
+
+## Run a task
+
+Run `Code Action` and choose
+`Run Maa task`. Output opens in a small log window. Use `:MaaPipelineStop` to
+stop it. The first run downloads MaaFramework; open the target game or app when
+the selected controller needs it.

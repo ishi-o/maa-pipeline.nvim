@@ -5,7 +5,7 @@
 基于 [Maa Support Extension](https://github.com/neko-para/maa-support-extension)
 中的解析器和索引，为 Neovim 提供 MaaFramework Pipeline 支持
 
-支持文件类型检测、补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持
+支持文件类型检测、补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持，也可以直接在 Neovim 中运行 MaaFramework 任务
 
 ## 安装
 
@@ -68,6 +68,15 @@ vim.lsp.config("maa_pipeline", {
   init_options = {
     mode = "auto", -- "auto"：检测 src/MaaCore；"maa"：使用 MAA 语法；"framework"：使用 MaaFramework 语法
     locale = "en", -- "en"：英文；"zh"：中文诊断和悬停文本
+    runtime = {
+      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework 下载文件和日志目录
+      version = "5.13.0", -- 执行任务所用的 MaaFramework 版本
+      registry = "https://registry.npmjs.org", -- 下载 MaaFramework 使用的 npm 镜像
+      timeout = 60000, -- 控制器和 Agent 连接超时，单位毫秒；-1 表示不限制
+      debug_mode = true, -- 写入 MaaFramework 调试日志
+      save_draw = false, -- 保存识别过程图片
+      save_on_error = true, -- 任务失败时保存识别数据
+    },
   },
   capabilities = nil, -- nil 使用 Neovim 默认能力；需要时可传入扩展后的客户端能力
   on_attach = nil, -- LSP 附加到缓冲区时调用
@@ -97,3 +106,9 @@ vim.lsp.config("maa_pipeline", {
 })
 vim.lsp.enable("maa_pipeline")
 ```
+
+## 运行任务
+
+使用 `Code Action` 执行光标选中的
+运行日志会显示在一个小窗口中，使用 `:MaaPipelineStop` 停止任务
+首次运行会下载 MaaFramework；所选控制器需要目标游戏或应用时，请先打开它

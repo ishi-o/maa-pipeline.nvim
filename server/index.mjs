@@ -27,10 +27,12 @@ import {
   notifications
 } from './interactive.mjs'
 import { ProjectManager, fileUriPath, pathUri } from './project.mjs'
+import { RuntimeClient } from './runtime-client.mjs'
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
 const documents = new TextDocuments(TextDocument)
 let projects
+let runtime
 
 function report(error) {
   connection.console.error(error instanceof Error ? error.stack ?? error.message : String(error))
@@ -93,6 +95,7 @@ connection.onInitialize(params => {
   }
   setLocale(options.locale === 'zh' ? 'zh' : 'en')
   projects = new ProjectManager({ roots, mode: options.mode ?? 'auto', onChanged: publish })
+  runtime = new RuntimeClient(connection, { ...options.runtime, locale: options.locale })
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -105,7 +108,7 @@ connection.onInitialize(params => {
       referencesProvider: true,
       codeLensProvider: { resolveProvider: false },
       inlayHintProvider: true,
-      codeActionProvider: { codeActionKinds: ['refactor.extract'] },
+      codeActionProvider: true,
       documentLinkProvider: { resolveProvider: false },
       workspaceSymbolProvider: true,
       colorProvider: true,
@@ -208,6 +211,10 @@ connection.onExecuteCommand(async params => {
     connection.sendNotification(notifications.triggerCompletion)
     return null
   }
+  if (params.command === commands.stopTask) {
+    await runtime.stop()
+    return null
+  }
 
   const root = typeof args[0] === 'string' ? args[0] : args[0]?.root
   const project = root && projects?.byRoot(root)
@@ -224,8 +231,10 @@ connection.onExecuteCommand(async params => {
   } else if (params.command === commands.evaluateTask) {
     const value = evaluatedTask(project, args[1])
     if (value) connection.sendNotification(notifications.showText, { title: args[1], content: value })
-  } else if (params.command === commands.launchTask) {
-    connection.sendNotification(notifications.launchTask, { root: project.root, task: args[1] })
+  } else if (params.command === commands.runTask) {
+    void runtime.run(project, args[1]).catch(error => {
+      runtime.notify('error', error instanceof Error ? error.message : String(error), args[1])
+    })
   } else if (params.command === commands.switchConfig) {
     const [, key, value] = args
     const edit = await configWorkspaceEdit(project, key, value)
@@ -252,7 +261,10 @@ connection.onExecuteCommand(async params => {
   }
   return null
 })
-connection.onShutdown(async () => projects?.stop())
+connection.onShutdown(async () => {
+  await runtime?.shutdown()
+  await projects?.stop()
+})
 
 documents.listen(connection)
 connection.listen()
