@@ -11,8 +11,7 @@ return {
     locale = "en",
     runtime = {
       data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim",
-      version = "5.13.0",
-      registry = "https://registry.npmjs.org",
+      version = "latest",
       timeout = 60000,
       debug_mode = true,
       save_draw = false,

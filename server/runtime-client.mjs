@@ -5,6 +5,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import pacote from 'pacote'
 import { MaaVersionManager } from '@nekosu/maa-version-manager'
 import {
   buildControllerRuntime,
@@ -20,6 +21,16 @@ import {
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 
 const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
+
+class NpmConfigVersionManager extends MaaVersionManager {
+  async extract(packageSpec, destination) {
+    await pacote.extract(packageSpec, destination)
+  }
+
+  async fetchLatest() {
+    return pacote.manifest('@maaxyz/maa-node@latest')
+  }
+}
 
 function encode(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64')
@@ -60,8 +71,8 @@ export class RuntimeClient {
     this.connection = connection
     this.options = {
       dataDir: options.data_dir,
-      version: options.version ?? '5.13.0',
-      registry: options.registry ?? MaaVersionManager.registries.npm,
+      requestedVersion: options.version ?? 'latest',
+      resolvedVersion: null,
       timeout: options.timeout ?? 60_000,
       debugMode: options.debug_mode ?? true,
       saveDraw: options.save_draw ?? false,
@@ -84,18 +95,30 @@ export class RuntimeClient {
   async prepare() {
     if (!this.options.dataDir) throw new Error('init_options.runtime.data_dir is required')
     if (!this.manager) {
-      this.manager = new MaaVersionManager(path.join(this.options.dataDir, 'native'), this.options.registry)
+      this.manager = new NpmConfigVersionManager(path.join(this.options.dataDir, 'native'))
       await this.manager.init()
     }
+
+    let version = this.options.resolvedVersion
+    if (!version) {
+      version = this.options.requestedVersion
+      if (version === 'latest') {
+        const latest = await this.manager.fetchLatest()
+        if (!latest?.version) throw new Error('Failed to resolve the latest MaaFramework version')
+        version = latest.version
+      }
+    }
+    this.options.resolvedVersion = version
+
     const labels = {
       'prepare-folder': 'Preparing MaaFramework',
-      'download-scripts': `Downloading MaaFramework ${this.options.version}`,
+      'download-scripts': `Downloading MaaFramework ${version}`,
       'download-binary': 'Downloading MaaFramework native library',
       'move-folders': 'Installing MaaFramework',
       finish: 'MaaFramework is ready'
     }
-    const prepared = await this.manager.prepare(this.options.version, step => this.notify('info', labels[step]))
-    if (!prepared) throw new Error(`Failed to prepare MaaFramework ${this.options.version}`)
+    const prepared = await this.manager.prepare(version, step => this.notify('info', labels[step]))
+    if (!prepared) throw new Error(`Failed to prepare MaaFramework ${version}`)
   }
 
   async ensure() {

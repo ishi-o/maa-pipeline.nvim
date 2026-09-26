@@ -70,8 +70,7 @@ vim.lsp.config("maa_pipeline", {
     locale = "en", -- "en"：英文；"zh"：中文诊断和悬停文本
     runtime = {
       data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework 下载文件和日志目录
-      version = "5.13.0", -- 执行任务所用的 MaaFramework 版本
-      registry = "https://registry.npmjs.org", -- 下载 MaaFramework 使用的 npm 镜像
+      version = "latest", -- "latest" 解析为最新版本；填写精确 semver 可固定版本
       timeout = 60000, -- 控制器和 Agent 连接超时，单位毫秒；-1 表示不限制
       debug_mode = true, -- 写入 MaaFramework 调试日志
       save_draw = false, -- 保存识别过程图片

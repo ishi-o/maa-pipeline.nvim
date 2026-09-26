@@ -73,8 +73,7 @@ vim.lsp.config("maa_pipeline", {
     locale = "en", -- "en": English; "zh": Chinese diagnostics and hover text
     runtime = {
       data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework downloads and logs
-      version = "5.13.0", -- MaaFramework version used to run tasks
-      registry = "https://registry.npmjs.org", -- npm registry used for MaaFramework downloads
+      version = "latest", -- "latest" resolves to the newest version; an exact semver pins it
       timeout = 60000, -- controller and Agent connection timeout in milliseconds; -1 disables it
       debug_mode = true, -- write MaaFramework debug logs
       save_draw = false, -- save recognition drawings
