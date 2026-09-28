@@ -15,6 +15,9 @@ export const commands = {
   evaluateTask: 'maa-pipeline.evaluateTask',
   runTask: 'maa-pipeline.runTask',
   stopTask: 'maa-pipeline.stopTask',
+  takeScreenshot: 'maa-pipeline.takeScreenshot',
+  saveScreenshot: 'maa-pipeline.saveScreenshot',
+  cancelScreenshot: 'maa-pipeline.cancelScreenshot',
   selectController: 'maa-pipeline.selectController',
   listControllers: 'maa-pipeline.listControllers',
   discoverController: 'maa-pipeline.discoverController',
@@ -29,6 +32,7 @@ export const notifications = {
   showText: 'maa-pipeline/showText',
   runtimeLog: 'maa-pipeline/runtimeLog',
   configureController: 'maa-pipeline/configureController',
+  saveScreenshot: 'maa-pipeline/saveScreenshot',
   requestInput: 'maa-pipeline/requestInput'
 }
 

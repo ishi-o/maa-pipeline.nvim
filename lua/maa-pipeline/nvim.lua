@@ -16,6 +16,19 @@ local function current_client()
   return client
 end
 
+local function execute(client, command, arguments)
+  client:request("workspace/executeCommand", {
+    command = command,
+    arguments = arguments,
+  }, function(error)
+    vim.schedule(function()
+      if error then
+        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
+      end
+    end)
+  end)
+end
+
 function M.setup()
   if not vim.lsp.config then
     error("maa-pipeline.nvim requires Neovim 0.11 or newer")
@@ -38,11 +51,19 @@ function M.setup()
       vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
       return
     end
-    client:request("workspace/executeCommand", {
-      command = "maa-pipeline.stopTask",
-      arguments = {},
-    })
+    execute(client, "maa-pipeline.stopTask", {})
   end, { desc = "Stop the running Maa task", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineScreenshot", function()
+    local client = current_client()
+    if not client then
+      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+      return
+    end
+    local root = detect.project_root(0)
+    controller.select(client, root, nil, function()
+      execute(client, "maa-pipeline.takeScreenshot", { root })
+    end)
+  end, { desc = "Select a controller, take a screenshot, and copy its ROI", force = true })
 end
 
 function M.project_root(bufnr)

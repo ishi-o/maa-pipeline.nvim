@@ -114,3 +114,10 @@ vim.lsp.enable("maa_pipeline")
 
 没有控制器配置时，运行任务会自动打开选择器
 也可以在 `interface.json/jsonc` 或 Pipeline 文件中使用 `:MaaPipelineSelectController`
+
+## 截图
+
+在 `interface.json/jsonc` 或 Pipeline 文件中执行 `:MaaPipelineScreenshot`，
+选择控制器后按提示输入图片名称。截图会保存到当前资源的
+`debug/screenshot`，整张图的 ROI 会写入系统剪贴板。截图本身通过上游
+Maa server 与 MaaFramework SDK 完成。

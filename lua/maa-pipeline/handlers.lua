@@ -4,6 +4,7 @@ local methods = {
   show_text = "maa-pipeline/showText",
   runtime_log = "maa-pipeline/runtimeLog",
   configure_controller = "maa-pipeline/configureController",
+  save_screenshot = "maa-pipeline/saveScreenshot",
   request_input = "maa-pipeline/requestInput",
 }
 
@@ -21,6 +22,39 @@ return {
             arguments = { result.root, result.task },
           })
         end
+      end)
+    end)
+  end,
+  [methods.save_screenshot] = function(_, result, ctx)
+    vim.schedule(function()
+      vim.ui.input({ prompt = "Input image name: ", cancelreturn = nil }, function(name)
+        local client = vim.lsp.get_client_by_id(ctx.client_id)
+        if not client then
+          return
+        end
+        if not name or name == "" then
+          client:request("workspace/executeCommand", {
+            command = "maa-pipeline.cancelScreenshot",
+            arguments = { result.root, result.token },
+          })
+          return
+        end
+        client:request("workspace/executeCommand", {
+          command = "maa-pipeline.saveScreenshot",
+          arguments = { result.root, result.token, name },
+        }, function(error, saved)
+          vim.schedule(function()
+            if error then
+              vim.notify(error.message or "Failed to save screenshot", vim.log.levels.ERROR)
+              return
+            end
+            if not saved then
+              return
+            end
+            vim.fn.setreg("+", vim.json.encode(saved.roi))
+            vim.notify("Screenshot saved: " .. saved.path .. " (ROI copied to clipboard)")
+          end)
+        end)
       end)
     end)
   end,

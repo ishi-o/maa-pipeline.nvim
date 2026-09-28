@@ -119,3 +119,11 @@ the selected controller needs it.
 If no controller is configured, running a task opens the selector. Use
 `:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file
 to open it directly.
+
+## Take a screenshot
+
+Run `:MaaPipelineScreenshot` from `interface.json/jsonc` or a pipeline file,
+select a controller, and enter an image name when prompted. The screenshot is
+saved to `debug/screenshot` in the active resource and its full-image ROI is
+copied to the system clipboard. The screenshot itself is taken through the
+upstream Maa server and MaaFramework SDK.

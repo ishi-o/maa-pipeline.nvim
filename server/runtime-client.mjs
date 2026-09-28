@@ -65,6 +65,17 @@ function runtimeConfig(project, constants) {
   }
 }
 
+function pngSize(image) {
+  const buffer = Buffer.from(image, 'base64')
+  if (buffer.length < 24 || buffer.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+    throw new Error('Maa server returned a non-PNG screenshot')
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  }
+}
+
 export class RuntimeClient {
   constructor(connection, options = {}) {
     options ??= {}
@@ -379,6 +390,34 @@ export class RuntimeClient {
         if (this.active?.handle === setup.handle) this.active = null
       }
     } finally {
+      this.running = null
+    }
+  }
+
+  async screenshot(project) {
+    if (this.active) {
+      const image = await this.request('getScreencap', this.active.handle)
+      if (!image) throw new Error('Failed to take screenshot')
+      const size = pngSize(image)
+      return { image, roi: [0, 0, size.width, size.height] }
+    }
+    if (this.running) throw new Error(`Task ${this.running} is still starting`)
+
+    this.running = 'screenshot'
+    this.notify('info', 'Taking screenshot')
+    let handle
+    try {
+      await this.ensure()
+      const constants = await this.request('fetchConstants')
+      const setup = await this.request('setupInstance', runtimeConfig(project, constants), this.options.timeout)
+      handle = setup?.handle
+      if (!handle) throw new Error(setup?.error ?? 'Failed to create Maa instance')
+      const image = await this.request('getScreencap', handle)
+      if (!image) throw new Error('Failed to take screenshot')
+      const size = pngSize(image)
+      return { image, roi: [0, 0, size.width, size.height] }
+    } finally {
+      if (handle) await this.request('destroyInstance', handle).catch(() => {})
       this.running = null
     }
   }

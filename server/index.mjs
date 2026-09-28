@@ -1,4 +1,7 @@
 import { createConnection, DiagnosticSeverity, ProposedFeatures, TextDocuments, TextDocumentSyncKind } from 'vscode-languageserver/node'
+import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import { parse, printParseErrorCode } from 'jsonc-parser'
 import { setLocale } from '@nekosu/maa-locale'
@@ -33,6 +36,7 @@ const connection = createConnection(ProposedFeatures.all, process.stdin, process
 const documents = new TextDocuments(TextDocument)
 let projects
 let runtime
+const pendingScreenshots = new Map()
 
 function report(error) {
   connection.console.error(error instanceof Error ? error.stack ?? error.message : String(error))
@@ -84,6 +88,26 @@ async function publish(project) {
   } catch (error) {
     report(error)
   }
+}
+
+function activeResourceRoot(project) {
+  const relative = project.bundle.paths.at(-1) ?? '.'
+  return path.resolve(project.root, relative.replaceAll('{PROJECT_DIR}', '.'))
+}
+
+async function saveScreenshot(project, token, name) {
+  const screenshot = pendingScreenshots.get(token)
+  pendingScreenshots.delete(token)
+  if (!screenshot) throw new Error('Screenshot request was not found or has expired')
+  if (!name || path.basename(name) !== name || name === '.' || name === '..' || name.includes('\0')) {
+    throw new Error('Screenshot name must be a file name')
+  }
+
+  const directory = path.join(activeResourceRoot(project), 'debug', 'screenshot')
+  await mkdir(directory, { recursive: true })
+  const file = path.join(directory, `${name}.png`)
+  await writeFile(file, Buffer.from(screenshot.image, 'base64'))
+  return { path: file, roi: screenshot.roi }
 }
 
 connection.onInitialize(params => {
@@ -204,24 +228,21 @@ connection.onDocumentColor(async params => {
   return project ? documentColors(project, document) : []
 })
 connection.onColorPresentation(() => [])
-connection.onExecuteCommand(async params => {
-  const args = params.arguments ?? []
-  if (params.command === commands.noop) return null
-  if (params.command === commands.triggerCompletion) {
+
+const globalCommandHandlers = {
+  [commands.noop]: () => null,
+  [commands.triggerCompletion]: () => {
     connection.sendNotification(notifications.triggerCompletion)
     return null
-  }
-  if (params.command === commands.stopTask) {
+  },
+  [commands.stopTask]: async () => {
     await runtime.stop()
     return null
   }
+}
 
-  const root = typeof args[0] === 'string' ? args[0] : args[0]?.root
-  const project = root && projects?.byRoot(root)
-  if (!project) return null
-  await project.refresh()
-
-  if (params.command === commands.listControllers) {
+const projectCommandHandlers = {
+  [commands.listControllers]: async ({ project }) => {
     const controllers = (project.bundle.content.object.controller ?? []).map(controller => ({
       name: controller.name,
       type: controller.type,
@@ -229,9 +250,21 @@ connection.onExecuteCommand(async params => {
     }))
     controllers.push({ name: '$fixed', type: 'Fixed Image', current: project.config.controller === '$fixed' })
     return controllers
-  } else if (params.command === commands.discoverController) {
-    return runtime.discoverController(project, args[1])
-  } else if (params.command === commands.configureController) {
+  },
+  [commands.discoverController]: ({ project, args }) => runtime.discoverController(project, args[1]),
+  [commands.takeScreenshot]: async ({ project }) => {
+    const screenshot = await runtime.screenshot(project)
+    const token = randomUUID()
+    pendingScreenshots.set(token, screenshot)
+    connection.sendNotification(notifications.saveScreenshot, { root: project.root, token })
+    return true
+  },
+  [commands.saveScreenshot]: ({ project, args }) => saveScreenshot(project, args[1], args[2]),
+  [commands.cancelScreenshot]: ({ args }) => {
+    pendingScreenshots.delete(args[1])
+    return true
+  },
+  [commands.configureController]: async ({ project, args }) => {
     const controller = args[1]
     const resources = project.bundle.content.object.resource ?? []
     const compatible = resource => controller === '$fixed' ||
@@ -249,27 +282,42 @@ connection.onExecuteCommand(async params => {
     await project.bundle.switchActive(project.controller, project.resource)
     await publish(project)
     return true
-  } else if (params.command === commands.selectController) {
-    connection.sendNotification(notifications.configureController, { root: project.root, controller: args[1] })
-  } else if (params.command === commands.showReferences) {
+  },
+  [commands.selectController]: ({ project, args }) => {
+    connection.sendNotification(notifications.configureController, {
+      root: project.root,
+      controller: args[1]
+    })
+    return null
+  },
+  [commands.showReferences]: async ({ project, args }) => {
     const [, uri, position] = args
     const file = fileUriPath(uri)
     if (!file || !position) return null
     const document = documents.get(uri) ?? await sourceDocument(project, file)
     const locations = await references(project, document, position)
     connection.sendNotification(notifications.showReferences, { uri, position, locations })
-  } else if (params.command === commands.evaluateTask) {
+    return null
+  },
+  [commands.evaluateTask]: ({ project, args }) => {
     const value = evaluatedTask(project, args[1])
     if (value) connection.sendNotification(notifications.showText, { title: args[1], content: value })
-  } else if (params.command === commands.runTask) {
+    return null
+  },
+  [commands.runTask]: ({ project, args }) => {
     if (!runtime.controllerReady(project)) {
-      connection.sendNotification(notifications.configureController, { root: project.root, task: args[1] })
+      connection.sendNotification(notifications.configureController, {
+        root: project.root,
+        task: args[1]
+      })
       return null
     }
     void runtime.run(project, args[1]).catch(error => {
       runtime.notify('error', error instanceof Error ? error.message : String(error), args[1])
     })
-  } else if (params.command === commands.switchConfig) {
+    return null
+  },
+  [commands.switchConfig]: async ({ project, args }) => {
     const [, key, value] = args
     const edit = await configWorkspaceEdit(project, key, value)
     const result = await connection.workspace.applyEdit(edit)
@@ -280,20 +328,35 @@ connection.onExecuteCommand(async params => {
       await project.bundle.switchActive(project.controller, project.resource)
       await publish(project)
     }
-  } else if (params.command === commands.extractLocale) {
+    return null
+  },
+  [commands.extractLocale]: async ({ project, args, command }) => {
     const [request, key] = args
     if (!key) {
       connection.sendNotification(notifications.requestInput, {
         title: 'Localization key',
-        command: params.command,
+        command,
         arguments: [request]
       })
       return null
     }
     const edit = await localeWorkspaceEdit(project, request, key)
     if (edit) await connection.workspace.applyEdit(edit)
+    return null
   }
-  return null
+}
+
+connection.onExecuteCommand(async params => {
+  const args = params.arguments ?? []
+  const globalHandler = globalCommandHandlers[params.command]
+  if (globalHandler) return globalHandler(args)
+
+  const root = typeof args[0] === 'string' ? args[0] : args[0]?.root
+  const project = root && projects?.byRoot(root)
+  if (!project) return null
+  await project.refresh()
+  const handler = projectCommandHandlers[params.command]
+  return handler ? handler({ project, args, command: params.command }) : null
 })
 connection.onShutdown(async () => {
   await runtime?.shutdown()
