@@ -1,8 +1,5 @@
 local M = {}
-
-local function notify_error(error)
-  vim.notify(error and (error.message or tostring(error)) or "Controller selection failed", vim.log.levels.ERROR)
-end
+local log = require("maa-pipeline.log")
 
 local function request(client, command, arguments, callback)
   client:request("workspace/executeCommand", {
@@ -11,7 +8,7 @@ local function request(client, command, arguments, callback)
   }, function(error, result)
     vim.schedule(function()
       if error then
-        notify_error(error)
+        log.error(client.id, error, "Controller selection failed")
         return
       end
       callback(result)
@@ -19,7 +16,7 @@ local function request(client, command, arguments, callback)
   end)
 end
 
-local function fill_fields(fields, index, values, done)
+local function fill_fields(fields, index, values, client, done)
   local field = fields[index]
   if not field then
     done(values)
@@ -36,7 +33,7 @@ local function fill_fields(fields, index, values, done)
         return
       end
       values[field.key] = item.value
-      fill_fields(fields, index + 1, values, done)
+      fill_fields(fields, index + 1, values, client, done)
     end)
   else
     vim.ui.input({ prompt = field.label .. ": ", default = field.default }, function(value)
@@ -47,8 +44,8 @@ local function fill_fields(fields, index, values, done)
         if field.number then
           local number = tonumber(value)
           if not number then
-            vim.notify(field.label .. " must be a number", vim.log.levels.WARN)
-            fill_fields(fields, index, values, done)
+            log.warn(client.id, field.label .. " must be a number")
+            fill_fields(fields, index + 1, values, client, done)
             return
           end
           values[field.key] = number
@@ -56,7 +53,7 @@ local function fill_fields(fields, index, values, done)
           values[field.key] = value
         end
       end
-      fill_fields(fields, index + 1, values, done)
+      fill_fields(fields, index + 1, values, client, done)
     end)
   end
 end
@@ -75,7 +72,7 @@ local function configure(client, root, controller, after)
     end
     if result.items then
       if #result.items == 0 then
-        vim.notify("No matching Maa controller target was found", vim.log.levels.WARN)
+        log.warn(client.id, "No matching Maa controller target was found")
         return
       end
       vim.ui.select(result.items, {
@@ -91,11 +88,11 @@ local function configure(client, root, controller, after)
     else
       for _, field in ipairs(result.fields or {}) do
         if field.items and #field.items == 0 then
-          vim.notify("No options were found for " .. field.label, vim.log.levels.WARN)
+          log.warn(client.id, "No options were found for " .. field.label)
           return
         end
       end
-      fill_fields(result.fields or {}, 1, {}, function(values)
+      fill_fields(result.fields or {}, 1, {}, client, function(values)
         save({ [result.config_key] = values })
       end)
     end

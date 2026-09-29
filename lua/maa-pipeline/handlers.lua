@@ -8,6 +8,8 @@ local methods = {
   request_input = "maa-pipeline/requestInput",
 }
 
+local log = require("maa-pipeline.log")
+
 return {
   [methods.configure_controller] = function(_, result, ctx)
     vim.schedule(function()
@@ -87,27 +89,13 @@ return {
     end)
   end,
   [methods.runtime_log] = function(_, result, ctx)
-    vim.schedule(function()
-      local name = "maa-pipeline://runtime"
-      local buffer = vim.fn.bufnr(name)
-      if buffer < 0 then
-        buffer = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_name(buffer, name)
-        vim.bo[buffer].buftype = "nofile"
-        vim.bo[buffer].bufhidden = "hide"
-        vim.bo[buffer].swapfile = false
-        vim.bo[buffer].filetype = "log"
-      end
-      vim.b[buffer].maa_pipeline_client_id = ctx.client_id
-      local message = string.format("[%s] %s", (result.level or "info"):upper(), result.message or "")
-      vim.bo[buffer].modifiable = true
-      vim.api.nvim_buf_set_lines(buffer, -1, -1, false, { message })
-      vim.bo[buffer].modifiable = false
-      if vim.fn.bufwinid(buffer) < 0 then
-        vim.cmd("botright 10split")
-        vim.api.nvim_win_set_buf(0, buffer)
-      end
-    end)
+    if result.level == "error" then
+      log.error(ctx.client_id, result.message)
+    elseif result.level == "warn" then
+      log.warn(ctx.client_id, result.message)
+    else
+      log.info(ctx.client_id, result.message)
+    end
   end,
   [methods.request_input] = function(_, result, ctx)
     vim.schedule(function()
