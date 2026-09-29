@@ -3,9 +3,11 @@ import { mkdir } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 
 import pacote from 'pacote'
+import { x as extractTar } from 'tar'
 import { MaaVersionManager } from '@nekosu/maa-version-manager'
 import {
   buildControllerRuntime,
@@ -23,8 +25,26 @@ import { createMessageConnection } from 'vscode-jsonrpc/node'
 const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
 
 class NpmConfigVersionManager extends MaaVersionManager {
-  async extract(packageSpec, destination) {
-    await pacote.extract(packageSpec, destination)
+  async extract(packageSpec, destination, registry) {
+    await mkdir(destination, { recursive: true })
+    await pacote.tarball.stream(packageSpec, async stream => {
+      let downloaded = 0
+      let reported = 0
+      stream.on('data', chunk => {
+        downloaded += chunk.length
+        if (downloaded - reported >= 1024 * 1024) {
+          reported = downloaded
+          this.downloadProgress?.(downloaded)
+        }
+      })
+      await pipeline(stream, extractTar({
+        cwd: destination,
+        strip: 1,
+        noMtime: true,
+        preserveOwner: false,
+        filter: (_, entry) => !/Link$/.test(entry.type)
+      }))
+    }, { registry })
   }
 
   async fetchLatest() {
@@ -34,6 +54,13 @@ class NpmConfigVersionManager extends MaaVersionManager {
 
 function encode(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64')
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
 }
 
 function replaceProjectDir(value, root) {
@@ -109,7 +136,6 @@ export class RuntimeClient {
       this.manager = new NpmConfigVersionManager(path.join(this.options.dataDir, 'native'))
       await this.manager.init()
     }
-
     let version = this.options.resolvedVersion
     if (!version) {
       version = this.options.requestedVersion
@@ -128,7 +154,15 @@ export class RuntimeClient {
       'move-folders': 'Installing MaaFramework',
       finish: 'MaaFramework is ready'
     }
-    const prepared = await this.manager.prepare(version, step => this.notify('info', labels[step]))
+    const progress = step => {
+      const label = labels[step] ?? step
+      if (step === 'download-scripts' || step === 'download-binary') this.manager.downloadLabel = label
+      this.notify('info', label)
+    }
+    this.manager.downloadProgress = bytes =>
+      this.notify('info', `${this.manager.downloadLabel} (${formatSize(bytes)})`)
+
+    const prepared = await this.manager.prepare(version, progress)
     if (!prepared) throw new Error(`Failed to prepare MaaFramework ${version}`)
   }
 
@@ -166,7 +200,7 @@ export class RuntimeClient {
     const child = spawn(process.execPath, [runtimeScript, encode({
       id,
       port: address.port,
-      module: this.manager.moduleFolder(this.options.version),
+      module: this.manager.moduleFolder(this.options.resolvedVersion),
       maaLog: path.join(this.options.dataDir, 'logs'),
       debugMode: this.options.debugMode,
       saveDraw: this.options.saveDraw,
@@ -343,7 +377,7 @@ export class RuntimeClient {
         PI_CLIENT_NAME: 'Neovim',
         PI_CLIENT_VERSION: '0.1.0',
         PI_CLIENT_LANGUAGE: this.options.locale,
-        PI_CLIENT_MAAFW_VERSION: this.options.version,
+        PI_CLIENT_MAAFW_VERSION: this.options.resolvedVersion,
         PI_VERSION: '',
         PI_CONTROLLER: '{}',
         PI_RESOURCE: '{}'
