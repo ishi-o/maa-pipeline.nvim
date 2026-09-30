@@ -5,10 +5,14 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "stylecheck": "npm run check",
-    "check": "node --check server/index.mjs && node --check server/project.mjs && node --check server/features.mjs && node --check server/interactive.mjs && node --check server/runtime-client.mjs && node --check server/runtime.mjs && node --check scripts/build.mjs",
-    "test": "node --test test/*.test.mjs"
+    "build": "node --experimental-strip-types scripts/build.ts",
+    "stylecheck": "npm run lint && npm run format:check",
+    "check": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@nekosu/maa-locale": "1.2.0",
@@ -25,6 +29,16 @@
     "vscode-uri": "^3.1.0"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.3",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
+  },
+  "imports": {
+    "#server/*": "./server/*"
   }
 }

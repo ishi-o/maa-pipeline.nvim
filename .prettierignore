@@ -1,0 +1,8 @@
+node_modules
+server/dist
+native
+.cache
+package-lock.json
+pnpm-lock.yaml
+*.md
+*.min.js

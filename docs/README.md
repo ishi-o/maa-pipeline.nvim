@@ -78,6 +78,8 @@ vim.lsp.config("maa_pipeline", {
       debug_mode = true, -- write MaaFramework debug logs
       save_draw = false, -- save recognition drawings
       save_on_error = true, -- save recognition data when a task fails
+      daemon = false, -- keep Maa agents alive between tasks
+      require_admin = false, -- start MaaServer with a UAC prompt on Windows
     },
   },
   capabilities = nil, -- nil uses Neovim defaults; provide extended client capabilities when needed
@@ -116,6 +118,18 @@ Run `Code Action` and choose
 stop it, or use `:MaaPipelineRun` to execute the task under the cursor. The
 first run downloads MaaFramework; open the target game or app when the
 selected controller needs it.
+
+`MaaPipelineStop` supports a user-specified global hotkey on Windows, so the task can be
+stopped while the game is in the foreground:
+
+```lua
+require("maa-pipeline.nvim").setup({
+  stop_hotkey = "Ctrl+Alt+S",
+})
+```
+
+No hotkey is registered unless `stop_hotkey` is set. `require_admin = true` elevates only
+`maa-runtime`; Neovim itself remains unelevated.
 
 If no controller is configured, running a task opens the selector. Use
 `:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file

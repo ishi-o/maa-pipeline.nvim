@@ -75,6 +75,8 @@ vim.lsp.config("maa_pipeline", {
       debug_mode = true, -- 写入 MaaFramework 调试日志
       save_draw = false, -- 保存识别过程图片
       save_on_error = true, -- 任务失败时保存识别数据
+      daemon = false, -- 任务之间保持 Maa agent 常驻
+      require_admin = false, -- 在 Windows 上通过 UAC 启动 MaaServer
     },
   },
   capabilities = nil, -- nil 使用 Neovim 默认能力；需要时可传入扩展后的客户端能力
@@ -112,6 +114,17 @@ vim.lsp.enable("maa_pipeline")
 运行日志会显示在一个小窗口中，使用 `:MaaPipelineStop` 停止任务
 也可以使用 `:MaaPipelineRun` 直接执行光标所在的任务
 首次运行会下载 MaaFramework；所选控制器需要目标游戏或应用时，请先打开它
+
+`MaaPipelineStop` 支持用户指定 Windows 全局热键，游戏在前台时也能触发：
+
+```lua
+require("maa-pipeline.nvim").setup({
+  stop_hotkey = "Ctrl+Alt+S",
+})
+```
+
+未设置 `stop_hotkey` 时不注册全局热键。`require_admin = true` 只提升
+`maa-runtime` 权限，Neovim 本身保持普通权限。
 
 没有控制器配置时，运行任务会自动打开选择器
 也可以在 `interface.json/jsonc` 或 Pipeline 文件中使用 `:MaaPipelineSelectController`

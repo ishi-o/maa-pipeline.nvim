@@ -36,8 +36,7 @@ function M.project_root(bufnr)
 end
 
 function M.is_maa_project(root)
-  return exists(root .. "/src/MaaCore")
-    or (exists(root .. "/tasks") and exists(root .. "/template"))
+  return exists(root .. "/src/MaaCore") or (exists(root .. "/tasks") and exists(root .. "/template"))
 end
 
 function M.is_pipeline_file(name)

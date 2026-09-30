@@ -1,6 +1,7 @@
 local M = {}
 local detect = require("maa-pipeline.detect")
 local controller = require("maa-pipeline.controller")
+local hotkey = require("maa-pipeline.hotkey")
 
 local function current_client()
   local clients = vim.lsp.get_clients({ name = "maa_pipeline", bufnr = 0 })
@@ -53,14 +54,42 @@ local function run_task_at_cursor(client)
   end)
 end
 
-function M.setup()
+local function stop_task()
+  local client = current_client()
+  if not client then
+    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+    return
+  end
+  execute(client, "maa-pipeline.stopTask", {})
+end
+
+function M.setup(options)
   if not vim.lsp.config then
     error("maa-pipeline.nvim requires Neovim 0.11 or newer")
   end
 
+  options = options or {}
   detect.setup_autoset()
   detect.autoset(0)
-  vim.lsp.config("maa_pipeline", {})
+  vim.lsp.config("maa_pipeline", {
+    init_options = {
+      mode = options.mode,
+      locale = options.locale,
+      runtime = options.runtime,
+    },
+  })
+  if options.stop_hotkey then
+    local registered = hotkey.register(options.stop_hotkey, stop_task)
+    if not registered then
+      vim.schedule(function()
+        vim.notify("Failed to register MaaPipelineStop hotkey: " .. options.stop_hotkey, vim.log.levels.WARN)
+      end)
+    end
+  elseif jit.os == "Windows" then
+    vim.schedule(function()
+      vim.notify("MaaPipelineStop hotkey is disabled; set setup({ stop_hotkey = \"Ctrl+Alt+S\" }) to enable it", vim.log.levels.INFO)
+    end)
+  end
   vim.api.nvim_create_user_command("MaaPipelineSelectController", function()
     local client = current_client()
     if not client then
@@ -69,14 +98,10 @@ function M.setup()
     end
     controller.select(client, detect.project_root(0))
   end, { desc = "Select and configure a Maa controller", force = true })
-  vim.api.nvim_create_user_command("MaaPipelineStop", function()
-    local client = current_client()
-    if not client then
-      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
-      return
-    end
-    execute(client, "maa-pipeline.stopTask", {})
-  end, { desc = "Stop the running Maa task", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineStop", stop_task, {
+    desc = "Stop the running Maa task",
+    force = true,
+  })
   vim.api.nvim_create_user_command("MaaPipelineRun", function()
     local client = current_client()
     if not client then
