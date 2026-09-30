@@ -30,13 +30,26 @@ import {
   notifications
 } from './interactive.mjs'
 import { ProjectManager, fileUriPath, pathUri } from './project.mjs'
-import { RuntimeClient } from './runtime-client.mjs'
+import { RuntimeClient, RuntimeSetupError } from './runtime-client.mjs'
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
 const documents = new TextDocuments(TextDocument)
 let projects
 let runtime
 const pendingScreenshots = new Map()
+
+function isControllerSetupFailure(error) {
+  return error instanceof RuntimeSetupError && error.code === 'maa.debug.init-controller-failed'
+}
+
+function requestControllerSelection(project, task) {
+  runtime.notify('warn', 'The selected controller is no longer available; select it again', task)
+  connection.sendNotification(notifications.configureController, {
+    root: project.root,
+    controller: project.controller,
+    task
+  })
+}
 
 function report(error) {
   connection.console.error(error instanceof Error ? error.stack ?? error.message : String(error))
@@ -253,7 +266,16 @@ const projectCommandHandlers = {
   },
   [commands.discoverController]: ({ project, args }) => runtime.discoverController(project, args[1]),
   [commands.takeScreenshot]: async ({ project }) => {
-    const screenshot = await runtime.screenshot(project)
+    let screenshot
+    try {
+      screenshot = await runtime.screenshot(project)
+    } catch (error) {
+      if (isControllerSetupFailure(error)) {
+        requestControllerSelection(project)
+        return null
+      }
+      throw error
+    }
     const token = randomUUID()
     pendingScreenshots.set(token, screenshot)
     connection.sendNotification(notifications.saveScreenshot, { root: project.root, token })
@@ -313,6 +335,10 @@ const projectCommandHandlers = {
       return null
     }
     void runtime.run(project, args[1]).catch(error => {
+      if (isControllerSetupFailure(error)) {
+        requestControllerSelection(project, args[1])
+        return
+      }
       runtime.notify('error', error instanceof Error ? error.message : String(error), args[1])
     })
     return null

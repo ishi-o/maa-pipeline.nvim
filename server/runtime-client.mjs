@@ -26,6 +26,14 @@ import { resolveAgent, runtimeAgents } from './agent.mjs'
 
 const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
 
+export class RuntimeSetupError extends Error {
+  constructor(code) {
+    super(code)
+    this.code = code
+    this.name = 'RuntimeSetupError'
+  }
+}
+
 class NpmConfigVersionManager extends MaaVersionManager {
   async extract(packageSpec, destination, registry) {
     await mkdir(destination, { recursive: true })
@@ -112,6 +120,7 @@ export class RuntimeClient {
     this.active = null
     this.running = null
     this.agents = new Map()
+    this.failedAgents = new Set()
   }
 
   notify(level, message, task) {
@@ -358,6 +367,7 @@ export class RuntimeClient {
     const id = randomUUID()
     const name = path.basename(exec, path.extname(exec))
     this.notify('info', `Starting external agent ${name}`)
+    this.failedAgents.delete(name)
     const agent = await resolveAgent(exec, cwd)
     const childEnv = {
       ...process.env,
@@ -392,8 +402,14 @@ export class RuntimeClient {
     })
     child.stdout.on('data', data => this.notify('info', data.toString().trim()))
     child.stderr.on('data', data => this.notify('error', data.toString().trim()))
-    const stopped = () => {
+    const stopped = (code, signal) => {
       if (!this.agents.delete(id) || !this.rpc) return
+      this.failedAgents.add(name)
+      if (code !== 0 && code !== null) {
+        this.notify('error', `External agent ${name} exited with code ${code}`)
+      } else if (signal) {
+        this.notify('warn', `External agent ${name} exited with signal ${signal}`)
+      }
       void this.request('agentStopped', id).catch(() => {})
     }
     child.once('error', error => {
@@ -412,19 +428,51 @@ export class RuntimeClient {
     agent.child.kill()
   }
 
+  async setup(project) {
+    const constants = await this.request('fetchConstants')
+    const config = runtimeConfig(project, constants)
+    let setup = await this.request('setupInstance', config, this.options.timeout)
+    const unavailableAgents = []
+
+    while (!setup?.handle && setup?.error === 'maa.debug.init-resource-failed') {
+      const failedAgents = [...this.failedAgents]
+      if (!failedAgents.length) break
+
+      unavailableAgents.push(...failedAgents)
+      this.failedAgents.clear()
+      config.agent = config.agent.filter(agent => {
+        const name = path.basename(agent.child_exec, path.extname(agent.child_exec))
+        return !failedAgents.includes(name)
+      })
+      this.notify(
+        'warn',
+        `External agents failed to start; retrying without them: ${failedAgents.join(', ')}`
+      )
+      setup = await this.request('setupInstance', config, this.options.timeout)
+    }
+
+    return { setup, unavailableAgents }
+  }
+
   async run(project, task) {
     if (this.running) throw new Error(`Task ${this.running} is already running`)
     this.running = task
     this.notify('info', `Starting task ${task}`, task)
     try {
       await this.ensure()
-      const constants = await this.request('fetchConstants')
-      const setup = await this.request('setupInstance', runtimeConfig(project, constants), this.options.timeout)
-      if (!setup?.handle) throw new Error(setup?.error ?? 'Failed to create Maa instance')
-      this.active = { handle: setup.handle, task }
+      const { setup, unavailableAgents } = await this.setup(project)
+      if (!setup?.handle) throw new RuntimeSetupError(setup?.error ?? 'Failed to create Maa instance')
+      this.active = { handle: setup.handle, task, unavailableAgents }
       try {
         const succeeded = await this.request('postTask', setup.handle, task, [])
-        this.notify(succeeded ? 'info' : 'error', `Task ${task} ${succeeded ? 'finished' : 'failed'}`, task)
+        this.notify(
+          succeeded ? 'info' : 'error',
+          `Task ${task} ${succeeded ? 'finished' : 'failed'}` +
+            (!succeeded && unavailableAgents.length > 0
+              ? ` (external agents unavailable: ${unavailableAgents.join(', ')})`
+              : ''),
+          task
+        )
       } finally {
         await this.request('destroyInstance', setup.handle).catch(() => {})
         if (this.active?.handle === setup.handle) this.active = null
@@ -448,10 +496,9 @@ export class RuntimeClient {
     let handle
     try {
       await this.ensure()
-      const constants = await this.request('fetchConstants')
-      const setup = await this.request('setupInstance', runtimeConfig(project, constants), this.options.timeout)
+      const { setup } = await this.setup(project)
       handle = setup?.handle
-      if (!handle) throw new Error(setup?.error ?? 'Failed to create Maa instance')
+      if (!handle) throw new RuntimeSetupError(setup?.error ?? 'Failed to create Maa instance')
       const image = await this.request('getScreencap', handle)
       if (!image) throw new Error('Failed to take screenshot')
       const size = pngSize(image)
