@@ -29,6 +29,30 @@ local function execute(client, command, arguments)
   end)
 end
 
+local function run_task_at_cursor(client)
+  local params = vim.lsp.util.make_range_params(0, client.offset_encoding)
+  params.context = { diagnostics = {} }
+  client:request("textDocument/codeAction", params, function(error, actions)
+    vim.schedule(function()
+      if error then
+        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
+        return
+      end
+
+      local run_actions = vim.tbl_filter(function(action)
+        return action.title and action.title:match("^Run Maa task: ") ~= nil
+      end, actions or {})
+      local action = run_actions[1]
+      if not action then
+        vim.notify("No Maa task at cursor", vim.log.levels.WARN)
+        return
+      end
+
+      execute(client, action.command.command, action.command.arguments)
+    end)
+  end)
+end
+
 function M.setup()
   if not vim.lsp.config then
     error("maa-pipeline.nvim requires Neovim 0.11 or newer")
@@ -53,6 +77,14 @@ function M.setup()
     end
     execute(client, "maa-pipeline.stopTask", {})
   end, { desc = "Stop the running Maa task", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineRun", function()
+    local client = current_client()
+    if not client then
+      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+      return
+    end
+    run_task_at_cursor(client)
+  end, { desc = "Run the Maa task at the cursor", force = true })
   vim.api.nvim_create_user_command("MaaPipelineScreenshot", function()
     local client = current_client()
     if not client then

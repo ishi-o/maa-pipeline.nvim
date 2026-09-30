@@ -113,8 +113,9 @@ vim.lsp.enable("maa_pipeline")
 
 Run `Code Action` and choose
 `Run Maa task`. Output opens in a small log window. Use `:MaaPipelineStop` to
-stop it. The first run downloads MaaFramework; open the target game or app when
-the selected controller needs it.
+stop it, or use `:MaaPipelineRun` to execute the task under the cursor. The
+first run downloads MaaFramework; open the target game or app when the
+selected controller needs it.
 
 If no controller is configured, running a task opens the selector. Use
 `:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file
@@ -127,3 +128,13 @@ select a controller, and enter an image name when prompted. The screenshot is
 saved to `debug/screenshot` in the active resource and its full-image ROI is
 copied to the system clipboard. The screenshot itself is taken through the
 upstream Maa server and MaaFramework SDK.
+
+## Architecture
+
+- Neovim runs the Lua client and starts the bundled Node.js LSP server.
+- The LSP server parses projects with `@nekosu/maa-pipeline-manager` and starts
+  a separate `maa-runtime` process.
+- `maa-runtime` uses `@nekosu/maa-server` to create controller, resource, and
+  task instances, then launches external agents declared in `interface.json`.
+- Runtime logs show `<-- method` for calls from Neovim into the Maa runtime and
+  `--> method` for calls from the runtime back into Neovim.

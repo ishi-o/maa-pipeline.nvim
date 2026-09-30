@@ -110,6 +110,7 @@ vim.lsp.enable("maa_pipeline")
 
 使用 `Code Action` 执行光标选中的
 运行日志会显示在一个小窗口中，使用 `:MaaPipelineStop` 停止任务
+也可以使用 `:MaaPipelineRun` 直接执行光标所在的任务
 首次运行会下载 MaaFramework；所选控制器需要目标游戏或应用时，请先打开它
 
 没有控制器配置时，运行任务会自动打开选择器
@@ -121,3 +122,13 @@ vim.lsp.enable("maa_pipeline")
 选择控制器后按提示输入图片名称。截图会保存到当前资源的
 `debug/screenshot`，整张图的 ROI 会写入系统剪贴板。截图本身通过上游
 Maa server 与 MaaFramework SDK 完成。
+
+## 架构
+
+- Neovim 运行 Lua 客户端，并启动内置的 Node.js LSP 服务端。
+- LSP 服务端使用 `@nekosu/maa-pipeline-manager` 解析项目，并启动独立的
+  `maa-runtime` 子进程。
+- `maa-runtime` 使用 `@nekosu/maa-server` 创建控制器、资源和任务实例，
+  并启动 `interface.json` 里声明的外置 agent。
+- 运行日志中，`<-- 方法` 表示 Neovim 调用 Maa runtime，`--> 方法` 表示
+  Maa runtime 反向调用 Neovim。

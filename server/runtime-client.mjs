@@ -22,26 +22,9 @@ import {
 } from '@nekosu/maa-server-proto'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 
-const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
+import { resolveAgent, runtimeAgents } from './agent.mjs'
 
-async function resolveAgentExecutable(exec, cwd) {
-  if (process.platform !== 'win32' || path.extname(exec)) return exec
-  const base = cwd ?? process.cwd()
-  const candidates = [
-    path.resolve(base, `${exec}.exe`),
-    path.resolve(base, 'install', `${exec}.exe`)
-  ]
-  for (const candidate of candidates) {
-    try {
-      await access(candidate)
-      return candidate
-    } catch {
-      // Try the next location.
-    }
-  }
-  // Let Node report the original executable if no Windows build is present.
-  return exec
-}
+const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
 
 class NpmConfigVersionManager extends MaaVersionManager {
   async extract(packageSpec, destination, registry) {
@@ -80,20 +63,6 @@ function formatSize(bytes) {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`
   return `${(bytes / 1024 ** 3).toFixed(1)} GiB`
-}
-
-function replaceProjectDir(value, root) {
-  return value.replaceAll('{PROJECT_DIR}', root)
-}
-
-function runtimeAgents(project) {
-  const value = project.bundle.content.object.agent
-  const agents = value ? (Array.isArray(value) ? value : [value]) : []
-  return agents.filter(agent => agent.child_exec).map(agent => ({
-    child_exec: replaceProjectDir(agent.child_exec, project.root),
-    child_args: agent.child_args?.map(arg => replaceProjectDir(arg, project.root)),
-    identifier: agent.identifier
-  }))
 }
 
 function runtimeConfig(project, constants) {
@@ -387,24 +356,40 @@ export class RuntimeClient {
 
   async startAgent(exec, args, cwd, env) {
     const id = randomUUID()
-    const executable = await resolveAgentExecutable(exec, cwd)
-    const child = spawn(executable, args, {
-      cwd,
-      env: {
-        ...process.env,
-        ...env,
-        PI_INTERFACE_VERSION: 'v2.5.0',
-        PI_CLIENT_NAME: 'Neovim',
-        PI_CLIENT_VERSION: '0.1.0',
-        PI_CLIENT_LANGUAGE: this.options.locale,
-        PI_CLIENT_MAAFW_VERSION: this.options.resolvedVersion,
-        PI_VERSION: '',
-        PI_CONTROLLER: '{}',
-        PI_RESOURCE: '{}'
-      },
+    const name = path.basename(exec, path.extname(exec))
+    this.notify('info', `Starting external agent ${name}`)
+    const agent = await resolveAgent(exec, cwd)
+    const childEnv = {
+      ...process.env,
+      ...env,
+      PI_INTERFACE_VERSION: 'v2.5.0',
+      PI_CLIENT_NAME: 'Neovim',
+      PI_CLIENT_VERSION: '0.1.0',
+      PI_CLIENT_LANGUAGE: this.options.locale,
+      PI_CLIENT_MAAFW_VERSION: this.options.resolvedVersion,
+      PI_VERSION: '',
+      PI_CONTROLLER: '{}',
+      PI_RESOURCE: '{}'
+    }
+    if (process.platform === 'win32') {
+      const pluginRuntimeDirectory = this.manager?.binaryFolder(
+        this.manager?.versionFolder(this.options.resolvedVersion)
+      )
+      const runtimeDirectories = [...agent.runtimeDirectories ?? [], pluginRuntimeDirectory]
+      const pathKey = process.env.Path === undefined ? 'PATH' : 'Path'
+      childEnv[pathKey] = [...new Set(runtimeDirectories.filter(Boolean)), childEnv[pathKey] ?? childEnv.PATH]
+        .filter(Boolean)
+        .join(path.delimiter)
+    }
+    const child = spawn(agent.executable, args, {
+      cwd: agent.cwd,
+      env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe']
     })
-    this.agents.set(id, child)
+    this.agents.set(id, { name, child })
+    child.once('spawn', () => {
+      this.notify('info', `External agent ${name} started (${agent.executable})`)
+    })
     child.stdout.on('data', data => this.notify('info', data.toString().trim()))
     child.stderr.on('data', data => this.notify('error', data.toString().trim()))
     const stopped = () => {
@@ -420,10 +405,11 @@ export class RuntimeClient {
   }
 
   stopAgent(id) {
-    const child = this.agents.get(id)
-    if (!child) return
+    const agent = this.agents.get(id)
+    if (!agent) return
     this.agents.delete(id)
-    child.kill()
+    this.notify('info', `Stopping external agent ${agent.name}`)
+    agent.child.kill()
   }
 
   async run(project, task) {

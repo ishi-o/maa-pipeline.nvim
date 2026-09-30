@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { completion, definition, nodeRange, syntaxDiagnostics, textDocument } from '../server/features.mjs'
 import { parse, printParseErrorCode } from 'jsonc-parser'
 import { codeActions, codeLenses, configWorkspaceEdit } from '../server/interactive.mjs'
+import { resolveAgent } from '../server/agent.mjs'
 import { MaaProject, normalizePath, pathUri } from '../server/project.mjs'
 
 test('converts upstream parser offsets to LSP ranges', () => {
@@ -23,6 +24,45 @@ test('normalizes project paths and emits file URIs', () => {
   const file = normalizePath(raw)
   assert.equal(file, path.normalize(path.resolve(raw)))
   assert.equal(pathUri(file), pathToFileURL(file).toString())
+})
+
+test('resolves extensionless Windows agents from ancestor install directories', { skip: process.platform !== 'win32' }, async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'maa-agent-test-'))
+  const project = path.join(root, 'assets')
+  const executable = path.join(root, 'install', 'agent', 'go-service.exe')
+  const runtimeDirectory = path.join(root, 'install', 'maafw')
+  await mkdir(path.dirname(executable), { recursive: true })
+  await mkdir(runtimeDirectory, { recursive: true })
+  await mkdir(project, { recursive: true })
+  await mkdir(path.join(root, 'maafw'))
+  await writeFile(executable, '')
+  await writeFile(path.join(runtimeDirectory, 'MaaAgentServer.dll'), '')
+  await writeFile(path.join(runtimeDirectory, 'MaaFramework.dll'), '')
+  t.after(async () => rm(root, { recursive: true, force: true }))
+
+  assert.deepEqual(await resolveAgent('agent/go-service', project), {
+    executable,
+    cwd: path.join(root, 'install'),
+    runtimeDirectories: [runtimeDirectory]
+  })
+})
+
+test('prefers the project-local extensionless Windows agent executable', { skip: process.platform !== 'win32' }, async t => {
+  const project = await mkdtemp(path.join(os.tmpdir(), 'maa-agent-test-'))
+  const executable = path.join(project, 'agent', 'go-service.exe')
+  const runtimeDirectory = path.join(project, 'maafw')
+  await mkdir(path.dirname(executable), { recursive: true })
+  await mkdir(runtimeDirectory, { recursive: true })
+  await writeFile(executable, '')
+  await writeFile(path.join(runtimeDirectory, 'MaaAgentServer.dll'), '')
+  await writeFile(path.join(runtimeDirectory, 'MaaFramework.dll'), '')
+  t.after(async () => rm(project, { recursive: true, force: true }))
+
+  assert.deepEqual(await resolveAgent('agent/go-service', project), {
+    executable,
+    cwd: project,
+    runtimeDirectories: [runtimeDirectory]
+  })
 })
 
 test('treats every supported file extension as JSONC', () => {
