@@ -6,7 +6,7 @@ import {
   TextDocumentSyncKind,
 } from "vscode-languageserver/node";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { parse, printParseErrorCode } from "jsonc-parser";
@@ -36,12 +36,14 @@ import {
   notifications,
 } from "./interactive.ts";
 import { ProjectManager, fileUriPath, pathUri } from "./project.ts";
+import { moveFile, runImageCropper } from "./image-cropper.ts";
 import { RuntimeClient, RuntimeSetupError } from "./runtime-client.ts";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);
 const documents = new TextDocuments(TextDocument);
 let projects;
 let runtime;
+let imageCropperPath;
 const pendingScreenshots = new Map();
 
 function isControllerSetupFailure(error) {
@@ -138,7 +140,7 @@ async function saveScreenshot(project, token, name) {
   const directory = path.join(activeResourceRoot(project), "debug", "screenshot");
   await mkdir(directory, { recursive: true });
   const file = path.join(directory, `${name}.png`);
-  await writeFile(file, Buffer.from(screenshot.image, "base64"));
+  await moveFile(screenshot.file, file);
   return { path: file, roi: screenshot.roi };
 }
 
@@ -152,6 +154,9 @@ connection.onInitialize((params) => {
     if (root) roots.push(root);
   }
   setLocale(options.locale === "zh" ? "zh" : "en");
+  imageCropperPath = options.image_cropper_path
+    ? path.resolve(options.image_cropper_path)
+    : undefined;
   projects = new ProjectManager({
     roots,
     mode: options.mode ?? "auto",
@@ -305,6 +310,10 @@ const projectCommandHandlers = {
   [commands.discoverController]: ({ project, args }) =>
     runtime.discoverController(project, args[1]),
   [commands.takeScreenshot]: async ({ project }) => {
+    if (!imageCropperPath) {
+      throw new Error("image_cropper_path is required to take a material screenshot");
+    }
+
     let screenshot;
     try {
       screenshot = await runtime.screenshot(project);
@@ -315,17 +324,23 @@ const projectCommandHandlers = {
       }
       throw error;
     }
+
+    const cropped = await runImageCropper(imageCropperPath, screenshot.image);
     const token = randomUUID();
-    pendingScreenshots.set(token, screenshot);
+    if (cropped.file) pendingScreenshots.set(token, cropped);
     connection.sendNotification(notifications.saveScreenshot, {
       root: project.root,
       token,
+      roi: cropped.roi,
+      image: Boolean(cropped.file),
     });
     return true;
   },
   [commands.saveScreenshot]: ({ project, args }) => saveScreenshot(project, args[1], args[2]),
-  [commands.cancelScreenshot]: ({ args }) => {
+  [commands.cancelScreenshot]: async ({ args }) => {
+    const screenshot = pendingScreenshots.get(args[1]);
     pendingScreenshots.delete(args[1]);
+    if (screenshot?.file) await unlink(screenshot.file).catch(() => {});
     return true;
   },
   [commands.configureController]: async ({ project, args }) => {

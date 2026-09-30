@@ -73,7 +73,12 @@ CONFIGURATION              *maa-pipeline.nvim-maa-pipeline.nvim-configuration*
 The default configuration is:
 
 >lua
-    require("maa-pipeline.nvim").setup() -- register the bundled default config; no options are accepted
+    require("maa-pipeline.nvim").setup() -- register the bundled default config
+
+    -- Optional integration with an external ImageCropper checkout:
+    -- require("maa-pipeline.nvim").setup({
+    --   image_cropper_path = "D:/path/to/ImageCropper",
+    -- })
     
     vim.lsp.config("maa_pipeline", {
       cmd = nil, -- nil keeps the bundled Node.js command; set a list to use another command
@@ -150,10 +155,12 @@ to open it directly.
 TAKE A SCREENSHOT      *maa-pipeline.nvim-maa-pipeline.nvim-take-a-screenshot*
 
 Run `:MaaPipelineScreenshot` from `interface.json/jsonc` or a pipeline file,
-select a controller, and enter an image name when prompted. The screenshot is
-saved to `debug/screenshot` in the active resource and its full-image ROI is
-copied to the system clipboard. The screenshot itself is taken through the
-upstream Maa server and MaaFramework SDK.
+select a controller, crop the image in ImageCropper, and enter an image name
+when prompted. Press `S` in ImageCropper to save a cropped image, or `R`/`C`
+to copy its ROI without saving an image. The cropped image is saved to
+`debug/screenshot` in the active resource and the selected ROI is copied to the
+system clipboard. The initial screenshot is taken through the upstream Maa
+server and MaaFramework SDK.
 
 
 ARCHITECTURE                *maa-pipeline.nvim-maa-pipeline.nvim-architecture*

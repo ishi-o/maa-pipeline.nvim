@@ -29,6 +29,14 @@ return {
   end,
   [methods.save_screenshot] = function(_, result, ctx)
     vim.schedule(function()
+      if result.roi then
+        vim.fn.setreg("+", result.roi)
+      end
+      if not result.image then
+        vim.notify("ROI copied to clipboard; no cropped image was saved")
+        return
+      end
+
       vim.ui.input({ prompt = "Input image name: ", cancelreturn = nil }, function(name)
         local client = vim.lsp.get_client_by_id(ctx.client_id)
         if not client then
@@ -53,8 +61,7 @@ return {
             if not saved then
               return
             end
-            vim.fn.setreg("+", vim.json.encode(saved.roi))
-            vim.notify("Screenshot saved: " .. saved.path .. " (ROI copied to clipboard)")
+            vim.notify("Screenshot saved: " .. saved.path)
           end)
         end)
       end)

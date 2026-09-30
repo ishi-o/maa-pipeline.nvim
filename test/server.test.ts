@@ -15,6 +15,7 @@ import {
 import { parse, printParseErrorCode } from "jsonc-parser";
 import { codeActions, codeLenses, configWorkspaceEdit } from "#server/interactive.ts";
 import { resolveAgent, runtimeAgents } from "#server/agent.ts";
+import { parseImageCropperOutput } from "#server/image-cropper.ts";
 import { MaaProject, normalizePath, pathUri } from "#server/project.ts";
 
 test("converts upstream parser offsets to LSP ranges", () => {
@@ -50,6 +51,20 @@ test("resolves agents from ancestor install directories", {}, async (t) => {
     executable,
     cwd: path.join(root, "install"),
   });
+});
+
+test("parses ImageCropper output", () => {
+  assert.deepEqual(
+    parseImageCropperOutput(
+      "dst: D:\\tools\\ImageCropper\\dst\\screenshot_1_2_3_4__0_0_10_10.png\n" +
+        "original roi: [1, 2, 3, 4]\n" +
+        "amplified roi: [0, 0, 10, 10]\n",
+    ),
+    {
+      file: "D:\\tools\\ImageCropper\\dst\\screenshot_1_2_3_4__0_0_10_10.png",
+      roi: "[1, 2, 3, 4]",
+    },
+  );
 });
 
 test("treats every supported file extension as JSONC", () => {

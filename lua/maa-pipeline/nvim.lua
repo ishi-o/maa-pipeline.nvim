@@ -76,6 +76,7 @@ function M.setup(options)
       mode = options.mode,
       locale = options.locale,
       runtime = options.runtime,
+      image_cropper_path = options.image_cropper_path,
     },
   })
   if options.stop_hotkey then

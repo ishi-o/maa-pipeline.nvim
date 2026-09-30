@@ -59,7 +59,12 @@ vim.lsp.enable("maa_pipeline")
 默认配置如下：
 
 ```lua
-require("maa-pipeline.nvim").setup() -- 注册插件提供的默认配置；不接收配置项
+require("maa-pipeline.nvim").setup() -- 注册插件提供的默认配置
+
+-- 可选接入外部 ImageCropper：
+-- require("maa-pipeline.nvim").setup({
+--   image_cropper_path = "D:/path/to/ImageCropper",
+-- })
 
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil 保留插件自带的 Node.js 命令；也可用列表指定其他命令
@@ -132,9 +137,10 @@ require("maa-pipeline.nvim").setup({
 ## 截图
 
 在 `interface.json/jsonc` 或 Pipeline 文件中执行 `:MaaPipelineScreenshot`，
-选择控制器后按提示输入图片名称。截图会保存到当前资源的
-`debug/screenshot`，整张图的 ROI 会写入系统剪贴板。截图本身通过上游
-Maa server 与 MaaFramework SDK 完成。
+选择控制器后在 ImageCropper 中裁剪，再按提示输入图片名称。在
+ImageCropper 中按 `S` 保存裁剪图，或按 `R`/`C` 只复制 ROI。裁剪图会
+保存到当前资源的 `debug/screenshot`，选中的 ROI 会写入系统剪贴板。原
+始截图通过上游 Maa server 与 MaaFramework SDK 完成。
 
 ## 架构
 
