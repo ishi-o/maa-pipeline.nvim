@@ -32,29 +32,25 @@ test("normalizes project paths and emits file URIs", () => {
   assert.equal(pathUri(file), pathToFileURL(file).toString());
 });
 
-test(
-  "resolves agents from ancestor install directories",
-  {},
-  async (t) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "maa-agent-test-"));
-    const project = path.join(root, "assets");
-    const executable = path.join(
-      root,
-      "install",
-      "agent",
-      `go-service${process.platform === "win32" ? ".exe" : ""}`,
-    );
-    await mkdir(path.dirname(executable), { recursive: true });
-    await mkdir(project, { recursive: true });
-    await writeFile(executable, "");
-    t.after(async () => rm(root, { recursive: true, force: true }));
+test("resolves agents from ancestor install directories", {}, async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "maa-agent-test-"));
+  const project = path.join(root, "assets");
+  const executable = path.join(
+    root,
+    "install",
+    "agent",
+    `go-service${process.platform === "win32" ? ".exe" : ""}`,
+  );
+  await mkdir(path.dirname(executable), { recursive: true });
+  await mkdir(project, { recursive: true });
+  await writeFile(executable, "");
+  t.after(async () => rm(root, { recursive: true, force: true }));
 
-    assert.deepEqual(await resolveAgent("agent/go-service", project), {
-      executable,
-      cwd: path.join(root, "install"),
-    });
-  },
-);
+  assert.deepEqual(await resolveAgent("agent/go-service", project), {
+    executable,
+    cwd: path.join(root, "install"),
+  });
+});
 
 test("treats every supported file extension as JSONC", () => {
   const document = textDocument("/tmp/pipeline.json", '{\n  // comment\n  "Task": {},\n}\n');
