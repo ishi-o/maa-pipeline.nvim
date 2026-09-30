@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { completion, definition, nodeRange, syntaxDiagnostics, textDocument } from '../server/features.mjs'
 import { parse, printParseErrorCode } from 'jsonc-parser'
@@ -18,9 +19,10 @@ test('converts upstream parser offsets to LSP ranges', () => {
 })
 
 test('normalizes project paths and emits file URIs', () => {
-  const file = normalizePath('/tmp/maa/../maa/project.json')
-  assert.equal(file, '/tmp/maa/project.json')
-  assert.equal(pathUri(file), 'file:///tmp/maa/project.json')
+  const raw = path.join(os.tmpdir(), 'maa', '..', 'maa', 'project.json')
+  const file = normalizePath(raw)
+  assert.equal(file, path.normalize(path.resolve(raw)))
+  assert.equal(pathUri(file), pathToFileURL(file).toString())
 })
 
 test('treats every supported file extension as JSONC', () => {

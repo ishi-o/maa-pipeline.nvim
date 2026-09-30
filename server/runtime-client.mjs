@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { access, mkdir } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -23,6 +23,25 @@ import {
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 
 const runtimeScript = fileURLToPath(new URL('./maa-runtime.mjs', import.meta.url))
+
+async function resolveAgentExecutable(exec, cwd) {
+  if (process.platform !== 'win32' || path.extname(exec)) return exec
+  const base = cwd ?? process.cwd()
+  const candidates = [
+    path.resolve(base, `${exec}.exe`),
+    path.resolve(base, 'install', `${exec}.exe`)
+  ]
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try the next location.
+    }
+  }
+  // Let Node report the original executable if no Windows build is present.
+  return exec
+}
 
 class NpmConfigVersionManager extends MaaVersionManager {
   async extract(packageSpec, destination, registry) {
@@ -366,9 +385,10 @@ export class RuntimeClient {
     throw new Error(`Unsupported controller type ${controller.type}`)
   }
 
-  startAgent(exec, args, cwd, env) {
+  async startAgent(exec, args, cwd, env) {
     const id = randomUUID()
-    const child = spawn(exec, args, {
+    const executable = await resolveAgentExecutable(exec, cwd)
+    const child = spawn(executable, args, {
       cwd,
       env: {
         ...process.env,
