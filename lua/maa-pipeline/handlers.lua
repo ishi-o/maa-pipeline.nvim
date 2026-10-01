@@ -96,13 +96,7 @@ return {
     end)
   end,
   [methods.runtime_log] = function(_, result, ctx)
-    if result.level == "error" then
-      log.error(ctx.client_id, result.message)
-    elseif result.level == "warn" then
-      log.warn(ctx.client_id, result.message)
-    else
-      log.info(ctx.client_id, result.message)
-    end
+    log.append(ctx.client_id, result)
   end,
   [methods.request_input] = function(_, result, ctx)
     vim.schedule(function()

@@ -50,7 +50,11 @@ function isControllerSetupFailure(error) {
 }
 
 function requestControllerSelection(project, task?: string) {
-  runtime.notify("warn", "The selected controller is no longer available; select it again", task);
+  runtime.log({
+    level: "warn",
+    message: "The selected controller is no longer available; select it again",
+    source: "maa-runtime",
+  });
   connection.sendNotification(notifications.configureController, {
     root: project.root,
     controller: project.controller,
@@ -397,7 +401,11 @@ const projectCommandHandlers = {
         requestControllerSelection(project, args[1]);
         return;
       }
-      runtime.notify("error", error instanceof Error ? error.message : String(error), args[1]);
+      runtime.log({
+        level: "error",
+        message: error instanceof Error ? error.message : String(error),
+        source: "maa-runtime",
+      });
     });
     return null;
   },

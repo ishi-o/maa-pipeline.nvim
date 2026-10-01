@@ -13,7 +13,7 @@ async function loadRuntimeClient(t: any) {
   await esbuild.build({
     entryPoints: [
       {
-        in: path.join(root, "server", "runtime-client.ts"),
+        in: path.join(root, "server", "client.ts"),
         out: "runtime-client.test",
       },
     ],

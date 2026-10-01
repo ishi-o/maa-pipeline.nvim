@@ -128,6 +128,12 @@ function M.setup(options)
       execute(client, "maa-pipeline.takeScreenshot", { root })
     end)
   end, { desc = "Select a controller, take a screenshot, and copy its ROI", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineLogExportJson", function()
+    require("maa-pipeline.log").export("json")
+  end, { desc = "Export filtered MaaFramework runtime logs as JSON", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineLogExportText", function()
+    require("maa-pipeline.log").export("text")
+  end, { desc = "Export filtered MaaFramework runtime logs as plain text", force = true })
 end
 
 function M.project_root(bufnr)
