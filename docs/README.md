@@ -84,7 +84,6 @@ vim.lsp.config("maa_pipeline", {
       save_draw = false, -- save recognition drawings
       save_on_error = true, -- save recognition data when a task fails
       daemon = false, -- keep Maa agents alive between tasks
-      require_admin = false, -- start MaaServer with a UAC prompt on Windows
     },
   },
   capabilities = nil, -- nil uses Neovim defaults; provide extended client capabilities when needed
@@ -133,8 +132,9 @@ require("maa-pipeline.nvim").setup({
 })
 ```
 
-No hotkey is registered unless `stop_hotkey` is set. `require_admin = true` elevates only
-`maa-runtime`; Neovim itself remains unelevated.
+No hotkey is registered unless `stop_hotkey` is set. On Windows, `maa-runtime` always starts
+with administrator permissions because input actions such as `Seize` require the same
+elevation as the target application. Neovim itself remains unelevated.
 
 If no controller is configured, running a task opens the selector. Use
 `:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file

@@ -17,7 +17,6 @@ return {
       save_draw = false,
       save_on_error = true,
       daemon = false,
-      require_admin = false,
     },
   },
 }

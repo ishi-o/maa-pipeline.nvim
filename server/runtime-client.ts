@@ -33,7 +33,6 @@ interface RuntimeOptions {
   save_on_error?: boolean;
   locale?: string;
   daemon?: boolean;
-  require_admin?: boolean;
 }
 
 interface RuntimeProject {
@@ -169,7 +168,6 @@ export class RuntimeClient {
     saveOnError: boolean;
     locale: string;
     daemon: boolean;
-    requireAdmin: boolean;
   };
   manager: MaaVersionManager | null = null;
   rpc: MessageConnection | null = null;
@@ -195,7 +193,6 @@ export class RuntimeClient {
       saveOnError: options.save_on_error ?? true,
       locale: options.locale === "zh" ? "zh" : "en",
       daemon: options.daemon ?? false,
-      requireAdmin: options.require_admin ?? false,
     };
   }
 
@@ -298,8 +295,7 @@ export class RuntimeClient {
         saveOnError: this.options.saveOnError,
       }),
     ];
-    const elevated =
-      this.options.requireAdmin && process.platform === "win32" && !(await this.isAdmin());
+    const elevated = process.platform === "win32" && !(await this.isAdmin());
     const child = elevated
       ? spawn(
           "powershell.exe",
