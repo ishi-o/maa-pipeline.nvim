@@ -19,57 +19,18 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
+import { encode, formatSize, pngSize } from "./utils.ts";
+import type {
+  ActiveTask,
+  AgentProcess,
+  RuntimeConnection,
+  RuntimeLogLevel,
+  RuntimeOptions,
+  RuntimeProject,
+  RuntimeSetupResult,
+} from "./types.ts";
 
 const runtimeScript = path.join(__dirname, "maa-runtime.mjs");
-
-type RuntimeLogLevel = "info" | "warn" | "error";
-
-interface RuntimeOptions {
-  data_dir?: string;
-  version?: string;
-  timeout?: number;
-  debug_mode?: boolean;
-  save_draw?: boolean;
-  save_on_error?: boolean;
-  locale?: string;
-  daemon?: boolean;
-}
-
-interface RuntimeProject {
-  root: string;
-  config: Record<string, any>;
-  bundle: {
-    content: {
-      object: Record<string, any>;
-    };
-  };
-}
-
-interface RuntimeConnection {
-  sendNotification(method: string, params?: unknown): void;
-  window: {
-    showInformationMessage(
-      message: string,
-      ...actions: { title: string }[]
-    ): Promise<{ title: string } | undefined>;
-  };
-}
-
-interface AgentProcess {
-  name: string;
-  child: ChildProcess;
-  daemon: boolean;
-}
-
-interface ActiveTask {
-  handle: string;
-  task: string;
-}
-
-interface RuntimeSetupResult {
-  handle?: string;
-  error?: string;
-}
 
 export class RuntimeSetupError extends Error {
   code: string;
@@ -119,17 +80,6 @@ class NpmConfigVersionManager extends MaaVersionManager {
   }
 }
 
-function encode(value: unknown) {
-  return Buffer.from(JSON.stringify(value)).toString("base64");
-}
-
-function formatSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
-}
-
 function runtimeConfig(project: RuntimeProject, constants: any) {
   const data = project.bundle.content.object;
   const controller = buildControllerRuntime(data, project.config, constants);
@@ -142,17 +92,6 @@ function runtimeConfig(project: RuntimeProject, constants: any) {
     resource,
     task: { tasks: [] },
     agent: runtimeAgents(project),
-  };
-}
-
-function pngSize(image: string) {
-  const buffer = Buffer.from(image, "base64");
-  if (buffer.length < 24 || buffer.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
-    throw new Error("Maa server returned a non-PNG screenshot");
-  }
-  return {
-    width: buffer.readUInt32BE(16),
-    height: buffer.readUInt32BE(20),
   };
 }
 

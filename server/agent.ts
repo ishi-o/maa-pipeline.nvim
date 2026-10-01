@@ -1,45 +1,7 @@
-import { access } from "node:fs/promises";
 import path from "node:path";
 
-export interface AgentConfig {
-  child_exec?: string;
-  child_args?: string[];
-  identifier?: string;
-}
-
-export interface RuntimeAgent extends Required<Pick<AgentConfig, "child_exec">> {
-  child_args?: string[];
-  identifier?: string;
-}
-
-interface AgentProject {
-  root: string;
-  bundle: {
-    content: {
-      object: {
-        agent?: AgentConfig | AgentConfig[];
-      };
-    };
-  };
-}
-
-export interface ResolvedAgent {
-  executable: string;
-  cwd: string;
-}
-
-async function exists(file: string) {
-  try {
-    await access(file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function replaceProjectDir(value: string, root: string) {
-  return value.replaceAll("{PROJECT_DIR}", root);
-}
+import type { AgentProject, ResolvedAgent, RuntimeAgent } from "./types.ts";
+import { fileExists, replaceProjectDir } from "./utils.ts";
 
 export function runtimeAgents(project: AgentProject): RuntimeAgent[] {
   const value = project.bundle.content.object.agent;
@@ -72,7 +34,7 @@ export async function resolveAgent(exec: string, cwd?: string): Promise<Resolved
       path.resolve(current, execName),
       path.resolve(current, "install", execName),
     ]) {
-      if (await exists(candidate)) {
+      if (await fileExists(candidate)) {
         executable = candidate;
         break;
       }

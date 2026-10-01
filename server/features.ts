@@ -6,7 +6,6 @@ import {
   MarkupKind,
   SymbolKind,
 } from "vscode-languageserver/node";
-import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   extractTaskRef,
   findDeclRef,
@@ -15,31 +14,19 @@ import {
   normalizeImageFolder,
 } from "@nekosu/maa-pipeline-manager";
 
-import { fileUriPath, normalizePath, pathUri } from "./project.ts";
-
-export function textDocument(file: string, text: string) {
-  const uri = pathUri(file);
-  return TextDocument.create(uri, "jsonc", 0, text);
-}
-
-export async function sourceDocument(project: any, file: string) {
-  return textDocument(file, (await project.loader.get(file)) ?? "");
-}
-
-export function range(document: any, offset: number, length: number) {
-  return {
-    start: document.positionAt(offset),
-    end: document.positionAt(offset + length),
-  };
-}
-
-export function nodeRange(document: any, node: any, startDelta = 0, endDelta = 0) {
-  return range(
-    document,
-    Math.max(0, node.offset + startDelta),
-    Math.max(0, node.length + endDelta),
-  );
-}
+import {
+  escaped,
+  fileUriPath,
+  hsv2rgb,
+  markdownText,
+  nodeRange,
+  normalizePath,
+  offsetRange,
+  pathUri,
+  range,
+  sourceDocument,
+  textDocument,
+} from "./utils.ts";
 
 function interfaceFile(project: any, file: string) {
   const rel = path.relative(project.root, normalizePath(file)).replaceAll(path.sep, "/");
@@ -317,17 +304,6 @@ export async function references(project: any, document: any, position: any) {
   ]);
 }
 
-function offsetRange(document: any, location: any, deltaRight = 0, deltaLeft = 0) {
-  const start = Math.max(0, location.offset + deltaLeft);
-  const end = Math.max(start, location.offset + location.length + deltaRight);
-  return { start: document.positionAt(start), end: document.positionAt(end) };
-}
-
-function escaped(value) {
-  const encoded = JSON.stringify(value);
-  return encoded.slice(1, -1);
-}
-
 function item(label: string, kind: any, editRange: any, extra: any = {}) {
   const { newText = label, ...rest } = extra;
   return {
@@ -579,10 +555,6 @@ export function completion(project: any, document: any, position: any): any {
   }
 
   return null;
-}
-
-function markdownText(value) {
-  return String(value).replaceAll("|", "\\|").replaceAll("\n", "<br>");
 }
 
 export async function localeHover(project, key) {
@@ -837,20 +809,6 @@ export function symbols(project, query) {
         };
       }),
   );
-}
-
-function hsv2rgb(h, s, v) {
-  const c = v * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = v - c;
-  let rgb;
-  if (h < 60) rgb = [c, x, 0];
-  else if (h < 120) rgb = [x, c, 0];
-  else if (h < 180) rgb = [0, c, x];
-  else if (h < 240) rgb = [0, x, c];
-  else if (h < 300) rgb = [x, 0, c];
-  else rgb = [c, 0, x];
-  return rgb.map((value) => (value + m) * 255);
 }
 
 export function documentColors(project, document) {

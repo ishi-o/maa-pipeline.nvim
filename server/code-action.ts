@@ -3,10 +3,9 @@ import { type CodeAction, type CodeActionParams, CodeActionKind } from "vscode-l
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import { t } from "@nekosu/maa-locale";
 
-import type { MaaProject } from "./project.ts";
 import { commands } from "./commands.ts";
-import { fileUriPath } from "./project.ts";
-import type { CodeActionProvider, ProviderContext } from "./types.ts";
+import { fileUriPath } from "./utils.ts";
+import type { CodeActionProvider, MaaProject, ProviderContext } from "./types.ts";
 
 export function screenShotProvider(ctx: ProviderContext) {
   const title = "ScreenShot";

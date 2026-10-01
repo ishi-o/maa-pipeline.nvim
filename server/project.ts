@@ -1,43 +1,15 @@
-import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { parse } from "jsonc-parser";
 
 import { FsContentLoader, FsContentWatcher, InterfaceBundle } from "@nekosu/maa-pipeline-manager";
-
-export function normalizePath(file) {
-  return path.normalize(path.resolve(file));
-}
-
-export function fileUriPath(uri) {
-  if (!uri || !uri.startsWith("file://")) return null;
-  try {
-    return normalizePath(fileURLToPath(uri));
-  } catch {
-    return null;
-  }
-}
-
-export function pathUri(file) {
-  return pathToFileURL(normalizePath(file)).toString();
-}
-
-function inside(file, root) {
-  const relative = path.relative(normalizePath(root), normalizePath(file));
-  return (
-    relative === "" ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
-  );
-}
-
-async function fileExists(file) {
-  try {
-    return (await fs.stat(file)).isFile();
-  } catch {
-    return false;
-  }
-}
+import {
+  configName,
+  fileExists,
+  findInterface,
+  inside,
+  normalizePath,
+  readConfig,
+} from "./utils.ts";
 
 export class OverlayLoader extends FsContentLoader {
   overlays = new Map<string, string | undefined>();
@@ -55,21 +27,6 @@ export class OverlayLoader extends FsContentLoader {
     const key = normalizePath(file);
     return this.overlays.has(key) ? this.overlays.get(key) : super.get(key);
   }
-}
-
-async function readConfig(loader: any, root: string) {
-  const text = await loader.get(path.join(root, "config", "maa_pi_config.json"));
-  if (!text) return {};
-  const errors = [];
-  const value = parse(text, errors, {
-    allowTrailingComma: true,
-    disallowComments: false,
-  });
-  return errors.length === 0 && value && typeof value === "object" ? value : {};
-}
-
-function configName(value) {
-  return typeof value === "string" ? value : (value?.name ?? "");
 }
 
 export class MaaProject {
@@ -214,20 +171,6 @@ export class MaaProject {
   async stop() {
     this.bundle.stop();
     await this.queue.catch(() => {});
-  }
-}
-
-async function findInterface(file, roots) {
-  let current = normalizePath(path.dirname(file));
-  while (true) {
-    for (const name of ["interface.json", "interface.jsonc"]) {
-      const candidate = path.join(current, name);
-      if (await fileExists(candidate)) return candidate;
-    }
-    if (roots.some((root) => normalizePath(root) === current)) return null;
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
   }
 }
 

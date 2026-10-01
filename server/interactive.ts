@@ -4,9 +4,10 @@ import { applyEdits, modify } from "jsonc-parser";
 import { t } from "@nekosu/maa-locale";
 import { extractTaskRef } from "@nekosu/maa-pipeline-manager";
 
-import { context, nodeRange, sourceDocument, textDocument } from "./features.ts";
-import { fileUriPath, pathUri } from "./project.ts";
 import { commands } from "./commands.ts";
+import { context } from "./features.ts";
+import { fileUriPath, nodeRange, pathUri, sourceDocument, textDocument } from "./utils.ts";
+import type { MaaProject } from "./types.ts";
 
 export { commands };
 export { codeActions } from "./code-action.ts";
@@ -25,7 +26,7 @@ function lens(range, title, command = commands.noop, args = []) {
   return { range, command: { title, command, arguments: args } };
 }
 
-export function codeLenses(project, document) {
+export function codeLenses(project: MaaProject, document) {
   const file = fileUriPath(document.uri);
   if (!file) return [];
   const located = project.bundle.locateLayer(file);
@@ -100,7 +101,7 @@ export function codeLenses(project, document) {
   return result;
 }
 
-export function inlayHints(project, document, requestedRange) {
+export function inlayHints(project: MaaProject, document, requestedRange) {
   const current = context(project, document, requestedRange.start);
   if (!current) return [];
   const begin = document.offsetAt(requestedRange.start);
@@ -128,7 +129,7 @@ export function inlayHints(project, document, requestedRange) {
   return result;
 }
 
-export async function localeWorkspaceEdit(project, request, key) {
+export async function localeWorkspaceEdit(project: MaaProject, request, key) {
   if (!key || project.bundle.langBundle.allKeys().includes(key)) return null;
   const sourceFile = fileUriPath(request.uri);
   if (!sourceFile) return null;
@@ -184,7 +185,7 @@ export async function localeWorkspaceEdit(project, request, key) {
   return { documentChanges };
 }
 
-export async function configWorkspaceEdit(project: any, key: any, value?: any) {
+export async function configWorkspaceEdit(project: MaaProject, key: any, value?: any) {
   const file = path.join(project.root, "config", "maa_pi_config.json");
   const previous = await project.loader.get(file);
   const text = previous ?? "{}\n";
@@ -222,7 +223,7 @@ export async function configWorkspaceEdit(project: any, key: any, value?: any) {
     : { changes: { [uri]: edits } };
 }
 
-export function evaluatedTask(project, task) {
+export function evaluatedTask(project: MaaProject, task) {
   const value = project.bundle.maa
     ? project.bundle.maaEvalTask(task)?.task
     : project.bundle.evalTask(task);

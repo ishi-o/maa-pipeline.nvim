@@ -21,7 +21,6 @@ import {
   hover,
   references,
   resolveCompletion,
-  sourceDocument,
   symbols,
   syntaxDiagnostics,
 } from "./features.ts";
@@ -35,9 +34,10 @@ import {
   localeWorkspaceEdit,
   notifications,
 } from "./interactive.ts";
-import { ProjectManager, fileUriPath, pathUri } from "./project.ts";
-import { findImageCropper, moveFile, runImageCropper } from "./image-cropper.ts";
+import { ProjectManager } from "./project.ts";
+import { findImageCropper, runImageCropper } from "./image-cropper.ts";
 import { RuntimeClient, RuntimeSetupError } from "./runtime-client.ts";
+import { commandRoot, fileUriPath, moveFile, pathUri, sourceDocument } from "./utils.ts";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);
 const documents = new TextDocuments(TextDocument);
@@ -435,7 +435,7 @@ connection.onExecuteCommand(async (params) => {
   const globalHandler = globalCommandHandlers[params.command];
   if (globalHandler) return globalHandler(args);
 
-  const root = typeof args[0] === "string" ? args[0] : args[0]?.root;
+  const root = commandRoot(args);
   const project = root && projects?.byRoot(root);
   if (!project) return null;
   await project.refresh();

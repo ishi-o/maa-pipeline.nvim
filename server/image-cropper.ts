@@ -1,31 +1,9 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, glob, mkdir, readdir, unlink, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { glob, mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export interface CroppedScreenshot {
-  file?: string;
-  roi?: string;
-}
-
-async function exists(file: string) {
-  try {
-    await access(file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function findRepoRoot(start: string): Promise<string | null> {
-  let dir = path.resolve(start);
-  while (true) {
-    if (await exists(path.join(dir, ".git"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
+import type { CroppedScreenshot } from "./types.ts";
+import { fileExists, findRepoRoot, pythonExecutable, venvDir, venvPython } from "./utils.ts";
 
 export async function findImageCropper(root: string) {
   const repo = (await findRepoRoot(root)) ?? path.resolve(root);
@@ -48,31 +26,13 @@ async function clearPngFiles(directory: string) {
   );
 }
 
-function pythonExecutable() {
-  return process.platform === "win32" ? "python" : "python3";
-}
-
-function venvDir() {
-  const base =
-    process.platform === "win32"
-      ? (process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"))
-      : (process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache"));
-  return path.join(base, "maaend", "imagecropper-venv");
-}
-
-function venvPython(venv: string) {
-  return process.platform === "win32"
-    ? path.join(venv, "Scripts", "python.exe")
-    : path.join(venv, "bin", "python");
-}
-
 async function ensureVenv(root: string) {
   const venv = venvDir();
   const python = venvPython(venv);
   const marker = path.join(venv, ".deps-installed");
-  if (await exists(marker)) return python;
+  if (await fileExists(marker)) return python;
 
-  if (!(await exists(python))) {
+  if (!(await fileExists(python))) {
     await mkdir(path.dirname(venv), { recursive: true });
     await new Promise<void>((resolve, reject) => {
       const child = spawn(pythonExecutable(), ["-m", "venv", venv], {
@@ -123,7 +83,7 @@ export function parseImageCropperOutput(output: string): CroppedScreenshot {
 
 export async function runImageCropper(root: string, image: string) {
   const main = path.join(root, "main.py");
-  if (!(await exists(main))) throw new Error(`ImageCropper main.py was not found in ${root}`);
+  if (!(await fileExists(main))) throw new Error(`ImageCropper main.py was not found in ${root}`);
 
   const python = await ensureVenv(root);
 
@@ -157,9 +117,4 @@ export async function runImageCropper(root: string, image: string) {
     throw new Error("ImageCropper exited without a ROI or saved image");
   }
   return result;
-}
-
-export async function moveFile(source: string, target: string) {
-  await copyFile(source, target);
-  await unlink(source);
 }
