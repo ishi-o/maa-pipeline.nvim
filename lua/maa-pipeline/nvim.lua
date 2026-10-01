@@ -12,7 +12,7 @@ local function current_client()
   end
   if not client then
     clients = vim.lsp.get_clients({ name = "maa_pipeline" })
-    client = #clients == 1 and clients[1] or nil
+    client = clients[1]
   end
   return client
 end
@@ -69,14 +69,14 @@ function M.setup(options)
   end
 
   options = options or {}
-  detect.setup_autoset()
+  local group = vim.api.nvim_create_augroup("MaaPipeline", { clear = true })
+  detect.setup_autoset(group)
   detect.autoset(0)
   vim.lsp.config("maa_pipeline", {
     init_options = {
       mode = options.mode,
       locale = options.locale,
       runtime = options.runtime,
-      image_cropper_path = options.image_cropper_path,
     },
   })
   if options.stop_hotkey then
@@ -91,6 +91,12 @@ function M.setup(options)
       vim.notify("MaaPipelineStop hotkey is disabled; set setup({ stop_hotkey = \"Ctrl+Alt+S\" }) to enable it", vim.log.levels.INFO)
     end)
   end
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = group,
+    callback = function()
+      hotkey.unregister()
+    end,
+  })
   vim.api.nvim_create_user_command("MaaPipelineSelectController", function()
     local client = current_client()
     if not client then

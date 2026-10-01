@@ -72,8 +72,8 @@ function M.autoset(bufnr)
   return false
 end
 
-function M.setup_autoset()
-  local group = vim.api.nvim_create_augroup("MaaPipelineFiletype", { clear = true })
+function M.setup_autoset(group)
+  group = group or vim.api.nvim_create_augroup("MaaPipelineFiletype", { clear = true })
   vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
     group = group,
     pattern = "*.json,*.jsonc",

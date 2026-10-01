@@ -64,11 +64,6 @@ The default configuration is:
 ```lua
 require("maa-pipeline.nvim").setup() -- register the bundled default config
 
--- Optional integration with an external ImageCropper checkout:
--- require("maa-pipeline.nvim").setup({
---   image_cropper_path = "D:/path/to/ImageCropper",
--- })
-
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil keeps the bundled Node.js command; set a list to use another command
   filetypes = { "maa-pipeline.jsonc" }, -- compound filetype; every Maa JSON file uses JSONC

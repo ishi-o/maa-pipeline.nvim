@@ -36,14 +36,13 @@ import {
   notifications,
 } from "./interactive.ts";
 import { ProjectManager, fileUriPath, pathUri } from "./project.ts";
-import { moveFile, runImageCropper } from "./image-cropper.ts";
+import { findImageCropper, moveFile, runImageCropper } from "./image-cropper.ts";
 import { RuntimeClient, RuntimeSetupError } from "./runtime-client.ts";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);
 const documents = new TextDocuments(TextDocument);
 let projects;
 let runtime;
-let imageCropperPath;
 const pendingScreenshots = new Map();
 
 function isControllerSetupFailure(error) {
@@ -154,9 +153,6 @@ connection.onInitialize((params) => {
     if (root) roots.push(root);
   }
   setLocale(options.locale === "zh" ? "zh" : "en");
-  imageCropperPath = options.image_cropper_path
-    ? path.resolve(options.image_cropper_path)
-    : undefined;
   projects = new ProjectManager({
     roots,
     mode: options.mode ?? "auto",
@@ -310,10 +306,6 @@ const projectCommandHandlers = {
   [commands.discoverController]: ({ project, args }) =>
     runtime.discoverController(project, args[1]),
   [commands.takeScreenshot]: async ({ project }) => {
-    if (!imageCropperPath) {
-      throw new Error("image_cropper_path is required to take a material screenshot");
-    }
-
     let screenshot;
     try {
       screenshot = await runtime.screenshot(project);
@@ -325,7 +317,7 @@ const projectCommandHandlers = {
       throw error;
     }
 
-    const cropped = await runImageCropper(imageCropperPath, screenshot.image);
+    const cropped = await runImageCropper(await findImageCropper(project.root), screenshot.image);
     const token = randomUUID();
     if (cropped.file) pendingScreenshots.set(token, cropped);
     connection.sendNotification(notifications.saveScreenshot, {

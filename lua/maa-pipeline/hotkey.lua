@@ -4,6 +4,7 @@ local ffi = require("ffi")
 local uv = vim.uv
 local registered = false
 local timer
+local window
 
 ffi.cdef([[
   typedef struct { long x; long y; } POINT;
@@ -12,8 +13,10 @@ ffi.cdef([[
   int RegisterHotKey(void *hwnd, int id, unsigned int modifiers, unsigned int key);
   int UnregisterHotKey(void *hwnd, int id);
   int PeekMessageW(MSG *message, void *hwnd, unsigned int min, unsigned int max, unsigned int remove);
-  int TranslateMessage(const MSG *message);
-  long DispatchMessageW(const MSG *message);
+  void *CreateWindowExA(unsigned int exStyle, const char *className, const char *windowName,
+    unsigned int style, int x, int y, int width, int height, void *parent, void *menu,
+    void *instance, void *param);
+  int DestroyWindow(void *hwnd);
 ]])
 
 local key_codes = {
@@ -57,17 +60,23 @@ function M.register(spec, callback)
   if not key or registered then
     return false
   end
-  registered = ffi.C.RegisterHotKey(nil, 1, modifiers, key) ~= 0
+  window = ffi.C.CreateWindowExA(0, "STATIC", "", 0, 0, 0, 0, 0,
+    ffi.cast("void *", -3), nil, nil, nil)
+  if window == nil then
+    return false
+  end
+
+  registered = ffi.C.RegisterHotKey(window, 1, modifiers, key) ~= 0
   if not registered then
+    ffi.C.DestroyWindow(window)
+    window = nil
     return false
   end
 
   local message = ffi.new("MSG[1]")
   timer = uv.new_timer()
   timer:start(50, 50, function()
-    while ffi.C.PeekMessageW(message, nil, 0x0312, 0x0312, 1) ~= 0 do
-      ffi.C.TranslateMessage(message[0])
-      ffi.C.DispatchMessageW(message[0])
+    while ffi.C.PeekMessageW(message, window, 0x0312, 0x0312, 1) ~= 0 do
       vim.schedule(callback)
     end
   end)
@@ -81,8 +90,12 @@ function M.unregister()
     timer = nil
   end
   if registered then
-    ffi.C.UnregisterHotKey(nil, 1)
+    ffi.C.UnregisterHotKey(window, 1)
     registered = false
+  end
+  if window ~= nil then
+    ffi.C.DestroyWindow(window)
+    window = nil
   end
 end
 

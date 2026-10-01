@@ -61,11 +61,6 @@ vim.lsp.enable("maa_pipeline")
 ```lua
 require("maa-pipeline.nvim").setup() -- 注册插件提供的默认配置
 
--- 可选接入外部 ImageCropper：
--- require("maa-pipeline.nvim").setup({
---   image_cropper_path = "D:/path/to/ImageCropper",
--- })
-
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil 保留插件自带的 Node.js 命令；也可用列表指定其他命令
   filetypes = { "maa-pipeline.jsonc" }, -- 复合文件类型；所有 Maa JSON 文件均按 JSONC 处理
