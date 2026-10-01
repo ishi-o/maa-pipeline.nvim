@@ -113,10 +113,11 @@ test("uses the upstream manager for MaaFramework language features", async (t) =
   const actionPosition = document.positionAt(source.indexOf('"Start"') + 2);
   assert.equal(
     codeActions(project, document, {
-      start: actionPosition,
-      end: actionPosition,
-    })[0].command.command,
-    "maa-pipeline.runTask",
+      textDocument: { uri: document.uri },
+      range: { start: actionPosition, end: actionPosition },
+      context: { diagnostics: [] },
+    }).some((action) => action.command?.command === "maa-pipeline.runTask"),
+    true,
   );
 
   const interfaceFile = path.join(root, "interface.json");
@@ -125,9 +126,10 @@ test("uses the upstream manager for MaaFramework language features", async (t) =
   const controllerPosition = interfaceDocument.positionAt(interfaceSource.indexOf("Default") + 2);
   assert.ok(
     codeActions(project, interfaceDocument, {
-      start: controllerPosition,
-      end: controllerPosition,
-    }).some((action) => action.command.command === "maa-pipeline.selectController"),
+      textDocument: { uri: interfaceDocument.uri },
+      range: { start: controllerPosition, end: controllerPosition },
+      context: { diagnostics: [] },
+    }).some((action) => action.command?.command === "maa-pipeline.selectController"),
   );
 
   const createConfig = await configWorkspaceEdit(project, {

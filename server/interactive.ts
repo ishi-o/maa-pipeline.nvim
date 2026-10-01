@@ -1,30 +1,15 @@
 import path from "node:path";
 
-import { CodeActionKind } from "vscode-languageserver/node";
 import { applyEdits, modify } from "jsonc-parser";
 import { t } from "@nekosu/maa-locale";
 import { extractTaskRef } from "@nekosu/maa-pipeline-manager";
 
 import { context, nodeRange, sourceDocument, textDocument } from "./features.ts";
 import { fileUriPath, pathUri } from "./project.ts";
+import { commands } from "./commands.ts";
 
-export const commands = {
-  noop: "maa-pipeline.noop",
-  triggerCompletion: "maa-pipeline.triggerCompletion",
-  showReferences: "maa-pipeline.showReferences",
-  evaluateTask: "maa-pipeline.evaluateTask",
-  runTask: "maa-pipeline.runTask",
-  stopTask: "maa-pipeline.stopTask",
-  takeScreenshot: "maa-pipeline.takeScreenshot",
-  saveScreenshot: "maa-pipeline.saveScreenshot",
-  cancelScreenshot: "maa-pipeline.cancelScreenshot",
-  selectController: "maa-pipeline.selectController",
-  listControllers: "maa-pipeline.listControllers",
-  discoverController: "maa-pipeline.discoverController",
-  configureController: "maa-pipeline.configureController",
-  switchConfig: "maa-pipeline.switchConfig",
-  extractLocale: "maa-pipeline.extractLocale",
-};
+export { commands };
+export { codeActions } from "./code-action.ts";
 
 export const notifications = {
   triggerCompletion: "maa-pipeline/triggerCompletion",
@@ -140,77 +125,6 @@ export function inlayHints(project, document, requestedRange) {
       if (doc) result.push({ position, label: doc });
     }
   }
-  return result;
-}
-
-export function codeActions(project, document, requestedRange) {
-  const file = fileUriPath(document.uri);
-  if (!file) return [];
-  const located = project.bundle.locateLayer(file);
-  if (!located) return [];
-  const [layer, normalizedFile, isDefault] = located;
-  const begin = document.offsetAt(requestedRange.start);
-  const end = document.offsetAt(requestedRange.end);
-  const result = [];
-  for (const decl of project.bundle.info.decls) {
-    if (decl.file !== normalizedFile || decl.type !== "interface.controller") continue;
-    if (decl.location.offset > end || decl.location.offset + decl.location.length < begin) continue;
-    const title = `Select Maa controller: ${decl.name}`;
-    result.push({
-      title,
-      command: {
-        title,
-        command: commands.selectController,
-        arguments: [project.root, decl.name],
-      },
-    });
-  }
-  if (!project.bundle.maa && !isDefault) {
-    for (const [task, infos] of Object.entries<any[]>(layer.tasks)) {
-      const info = infos.find(
-        (item) =>
-          item.file === normalizedFile &&
-          item.prop.offset <= end &&
-          item.prop.offset + item.prop.length >= begin,
-      );
-      if (!info) continue;
-      const title = `Run Maa task: ${task}`;
-      result.push({
-        title,
-        command: {
-          title,
-          command: commands.runTask,
-          arguments: [project.root, task],
-        },
-      });
-    }
-  }
-  const ref = layer.mergedRefs.find(
-    (info) =>
-      info.file === normalizedFile &&
-      info.type === "task.can_locale" &&
-      info.location.offset <= end &&
-      info.location.offset + info.location.length >= begin,
-  );
-  if (!ref) return result;
-  const title = t("maa.pipeline.codeaction.extract-locale");
-  result.push({
-    title,
-    kind: CodeActionKind.RefactorExtract,
-    command: {
-      title,
-      command: commands.extractLocale,
-      arguments: [
-        {
-          root: project.root,
-          uri: document.uri,
-          offset: ref.location.offset,
-          length: ref.location.length,
-          value: ref.target,
-        },
-      ],
-    },
-  });
   return result;
 }
 

@@ -1,0 +1,17 @@
+export const commands = {
+  noop: "maa-pipeline.noop",
+  triggerCompletion: "maa-pipeline.triggerCompletion",
+  showReferences: "maa-pipeline.showReferences",
+  evaluateTask: "maa-pipeline.evaluateTask",
+  runTask: "maa-pipeline.runTask",
+  stopTask: "maa-pipeline.stopTask",
+  screenShot: "maa-pipeline.takeScreenshot",
+  saveScreenshot: "maa-pipeline.saveScreenshot",
+  cancelScreenshot: "maa-pipeline.cancelScreenshot",
+  selectController: "maa-pipeline.selectController",
+  listControllers: "maa-pipeline.listControllers",
+  discoverController: "maa-pipeline.discoverController",
+  configureController: "maa-pipeline.configureController",
+  switchConfig: "maa-pipeline.switchConfig",
+  extractLocale: "maa-pipeline.extractLocale",
+};

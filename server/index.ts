@@ -255,7 +255,7 @@ connection.languages.inlayHint.on(async (params) => {
 connection.onCodeAction(async (params) => {
   const document = documents.get(params.textDocument.uri);
   const project = document && (await forDocument(document));
-  return project ? codeActions(project, document, params.range) : [];
+  return project ? codeActions(project, document, params) : [];
 });
 connection.onDocumentLinks(async (params) => {
   const document = documents.get(params.textDocument.uri);
@@ -305,7 +305,7 @@ const projectCommandHandlers = {
   },
   [commands.discoverController]: ({ project, args }) =>
     runtime.discoverController(project, args[1]),
-  [commands.takeScreenshot]: async ({ project }) => {
+  [commands.screenShot]: async ({ project }) => {
     let screenshot;
     try {
       screenshot = await runtime.screenshot(project);
