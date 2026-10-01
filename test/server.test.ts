@@ -9,7 +9,7 @@ import { completion, definition, syntaxDiagnostics } from "#server/features.ts";
 import { parse, printParseErrorCode } from "jsonc-parser";
 import { codeActions, codeLenses, configWorkspaceEdit } from "#server/interactive.ts";
 import { resolveAgent, runtimeAgents } from "#server/agent.ts";
-import { parseImageCropperOutput } from "#server/image-cropper.ts";
+import { parseImageCropperOutput } from "#server/image.ts";
 import { MaaProject } from "#server/project.ts";
 import { nodeRange, normalizePath, pathUri, textDocument } from "#server/utils.ts";
 

@@ -100,4 +100,4 @@ export interface CroppedScreenshot {
 }
 
 export type { MaaProject, OverlayLoader, ProjectManager } from "./project.ts";
-export type { RuntimeClient, RuntimeSetupError } from "./runtime-client.ts";
+export type { RuntimeClient, RuntimeSetupError } from "./client.ts";

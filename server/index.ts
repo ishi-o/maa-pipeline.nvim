@@ -35,8 +35,8 @@ import {
   notifications,
 } from "./interactive.ts";
 import { ProjectManager } from "./project.ts";
-import { findImageCropper, runImageCropper } from "./image-cropper.ts";
-import { RuntimeClient, RuntimeSetupError } from "./runtime-client.ts";
+import { findImageCropper, runImageCropper } from "./image.ts";
+import { RuntimeClient, RuntimeSetupError } from "./client.ts";
 import { commandRoot, fileUriPath, moveFile, pathUri, sourceDocument } from "./utils.ts";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);

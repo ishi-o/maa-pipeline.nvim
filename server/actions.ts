@@ -96,9 +96,9 @@ export function extractLocaleProvider(ctx: ProviderContext) {
 }
 
 export const providers: CodeActionProvider[] = [
-  screenShotProvider,
-  selectControllerProvider,
   runTaskProvider,
+  selectControllerProvider,
+  screenShotProvider,
   extractLocaleProvider,
 ];
 

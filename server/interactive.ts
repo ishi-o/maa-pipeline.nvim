@@ -10,7 +10,7 @@ import { fileUriPath, nodeRange, pathUri, sourceDocument, textDocument } from ".
 import type { MaaProject } from "./types.ts";
 
 export { commands };
-export { codeActions } from "./code-action.ts";
+export { codeActions } from "./actions.ts";
 
 export const notifications = {
   triggerCompletion: "maa-pipeline/triggerCompletion",
