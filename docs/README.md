@@ -5,10 +5,16 @@
 Neovim support for MaaFramework pipelines, reusing the parser and index from
 [Maa Support Extension](https://github.com/neko-para/maa-support-extension).
 
-It provides filetype detection, completion, hover, navigation, diagnostics,
-Code Lens, code actions, inlay hints, document links, workspace symbols, and
-color support for Maa pipeline files. MaaFramework tasks can also run directly
-from Neovim.
+## Features
+
+- LSP features: completion, hover, navigation, references, diagnostics,
+  Code Lens, code actions, inlay hints, document links, workspace symbols,
+  and color support
+- Filetype detection for Maa JSON/JSONC pipelines
+- Run MaaFramework tasks directly from Neovim
+- Runtime logs with native `ft=log` highlighting, source/kind highlights,
+  Lua filtering, folding, and JSON or text export
+- Screenshot cropping with ImageCropper
 
 ## Install
 
@@ -62,7 +68,9 @@ vim.lsp.enable("maa_pipeline")
 The default configuration is:
 
 ```lua
-require("maa-pipeline.nvim").setup() -- register the bundled default config
+require("maa-pipeline.nvim").setup({
+  stop_hotkey = nil, -- e.g. "Ctrl+Alt+S"; no global hotkey is registered when nil
+})
 
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil keeps the bundled Node.js command; set a list to use another command
@@ -89,61 +97,58 @@ vim.lsp.config("maa_pipeline", {
 vim.lsp.enable("maa_pipeline") -- enable after applying overrides
 ```
 
-For example, to force Maa mode and Chinese messages:
+On Windows, `maa-runtime` starts with administrator permissions because input
+actions such as `Seize` require the same elevation as the target application.
+Neovim itself remains unelevated.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `:MaaPipelineSelectController` | Select and configure a Maa controller |
+| `:MaaPipelineStop` | Stop the running Maa task |
+| `:MaaPipelineRun` | Run the Maa task at the cursor |
+| `:MaaPipelineScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
+| `:MaaPipelineLogFilter [expression]` | Filter runtime logs with a Lua expression; an empty expression clears the filter |
+| `:MaaPipelineLogExportJson` | Export filtered runtime logs as JSON |
+| `:MaaPipelineLogExportText` | Export filtered runtime logs as plain text |
+
+## Code Actions
+
+| Action | Description |
+| --- | --- |
+| `Run Maa task` | Run the task at the cursor |
+| `Select Maa controller` | Select a controller declared in `interface.json/jsonc` |
+| `ScreenShot` | Take and crop a screenshot |
+| `Extract locale` | Move a localizable task reference into the localization file |
+
+## Going Further
+
+### Buffer Shortcuts
+
+| Scope | Key | Action |
+| --- | --- | --- |
+| Runtime log | `<CR>` | Filter by the clicked source, task ID, or name |
+| Runtime log | `f` | Prompt for a Lua filter expression |
+| Runtime log | `zc` | Close the log fold |
+| Runtime log | `zv` | Open the log fold under the cursor |
+| ImageCropper | `S` | Save the cropped image |
+| ImageCropper | `R` / `C` | Copy the ROI without saving an image |
+
+### Custom Render
 
 ```lua
-require("maa-pipeline.nvim").setup()
-
-local capabilities = vim.lsp.protocol.make_client_capabilities()
-capabilities.textDocument.completion.completionItem.snippetSupport = true -- advertise snippet completion support
-
-vim.lsp.config("maa_pipeline", {
-  capabilities = capabilities, -- replace this with capabilities from blink.cmp, nvim-cmp, or another client
-  on_attach = function(client, bufnr) -- customize the attached client and buffer here
-    vim.keymap.set("n", "gd", vim.lsp.buf.definition, { buffer = bufnr })
+local render = {
+  render = function(entry)
+    return { entry.raw or "" }, {}
   end,
-  init_options = {
-    mode = "maa",
-    locale = "zh",
-  },
-})
-vim.lsp.enable("maa_pipeline")
+  render_details = function(entry)
+    return { vim.inspect(entry.details) }
+  end,
+}
+
+require("maa-pipeline.log").use(render)
 ```
-
-## Run a task
-
-Run `Code Action` and choose
-`Run Maa task`. Output opens in a small log window. Use `:MaaPipelineStop` to
-stop it, or use `:MaaPipelineRun` to execute the task under the cursor. The
-first run downloads MaaFramework; open the target game or app when the
-selected controller needs it.
-
-`MaaPipelineStop` supports a user-specified global hotkey on Windows, so the task can be
-stopped while the game is in the foreground:
-
-```lua
-require("maa-pipeline.nvim").setup({
-  stop_hotkey = "Ctrl+Alt+S",
-})
-```
-
-No hotkey is registered unless `stop_hotkey` is set. On Windows, `maa-runtime` always starts
-with administrator permissions because input actions such as `Seize` require the same
-elevation as the target application. Neovim itself remains unelevated.
-
-If no controller is configured, running a task opens the selector. Use
-`:MaaPipelineSelectController` from `interface.json/jsonc` or a pipeline file
-to open it directly.
-
-## Take a screenshot
-
-Run `:MaaPipelineScreenshot` from `interface.json/jsonc` or a pipeline file,
-select a controller, crop the image in ImageCropper, and enter an image name
-when prompted. Press `S` in ImageCropper to save a cropped image, or `R`/`C`
-to copy its ROI without saving an image. The cropped image is saved to
-`debug/screenshot` in the active resource and the selected ROI is copied to the
-system clipboard. The initial screenshot is taken through the upstream Maa
-server and MaaFramework SDK.
 
 ## Architecture
 
@@ -152,5 +157,3 @@ server and MaaFramework SDK.
   a separate `maa-runtime` process.
 - `maa-runtime` uses `@nekosu/maa-server` to create controller, resource, and
   task instances, then launches external agents declared in `interface.json`.
-- Runtime logs show `<-- method` for calls from Neovim into the Maa runtime and
-  `--> method` for calls from the runtime back into Neovim.

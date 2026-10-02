@@ -166,6 +166,7 @@ connection.onInitialize((params) => {
     ...options.runtime,
     locale: options.locale,
   });
+  globalThis.maaPipelineRuntime = runtime;
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -453,6 +454,7 @@ connection.onExecuteCommand(async (params) => {
 connection.onShutdown(async () => {
   await runtime?.shutdown();
   await projects?.stop();
+  globalThis.maaPipelineRuntime = undefined;
 });
 
 documents.listen(connection);

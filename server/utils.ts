@@ -4,6 +4,15 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "jsonc-parser";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import type { RuntimeLogPayload } from "./types.ts";
+
+declare global {
+  var maaPipelineRuntime: { log(payload: RuntimeLogPayload): void } | null | undefined;
+}
+
+export function log(payload: RuntimeLogPayload) {
+  globalThis.maaPipelineRuntime?.log(payload);
+}
 
 export function normalizePath(file: string) {
   return path.normalize(path.resolve(file));

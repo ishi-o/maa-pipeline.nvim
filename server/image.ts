@@ -3,7 +3,7 @@ import { glob, mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { CroppedScreenshot } from "./types.ts";
-import { fileExists, findRepoRoot, pythonExecutable, venvDir, venvPython } from "./utils.ts";
+import { fileExists, findRepoRoot, log, pythonExecutable, venvDir, venvPython } from "./utils.ts";
 
 export async function findImageCropper(root: string) {
   const repo = (await findRepoRoot(root)) ?? path.resolve(root);
@@ -33,6 +33,11 @@ async function ensureVenv(root: string) {
   if (await fileExists(marker)) return python;
 
   if (!(await fileExists(python))) {
+    log({
+      level: "info",
+      message: "Creating the ImageCropper Python environment",
+      source: "image-cropper",
+    });
     await mkdir(path.dirname(venv), { recursive: true });
     await new Promise<void>((resolve, reject) => {
       const child = spawn(pythonExecutable(), ["-m", "venv", venv], {
@@ -41,15 +46,24 @@ async function ensureVenv(root: string) {
       let stderr = "";
       child.stderr?.setEncoding("utf8").on("data", (data) => (stderr += data));
       child.once("error", reject);
-      child.once("close", (code) =>
-        code === 0
-          ? resolve()
-          : reject(new Error(`Failed to create venv${stderr ? `: ${stderr.trim()}` : ""}`)),
-      );
+      child.once("close", (code) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        const message = `Failed to create venv${stderr ? `: ${stderr.trim()}` : ""}`;
+        log({ level: "error", message, source: "image-cropper" });
+        reject(new Error(message));
+      });
     });
   }
 
   await new Promise<void>((resolve, reject) => {
+    log({
+      level: "info",
+      message: "Installing ImageCropper requirements",
+      source: "image-cropper",
+    });
     const child = spawn(python, ["-m", "pip", "install", "-r", "requirements.txt"], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
@@ -57,17 +71,24 @@ async function ensureVenv(root: string) {
     let stderr = "";
     child.stderr?.setEncoding("utf8").on("data", (data) => (stderr += data));
     child.once("error", reject);
-    child.once("close", (code) =>
-      code === 0
-        ? resolve()
-        : reject(
-            new Error(
-              `Failed to install ImageCropper dependencies${stderr ? `: ${stderr.trim()}` : ""}`,
-            ),
-          ),
-    );
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const message = `Failed to install ImageCropper dependencies${
+        stderr ? `: ${stderr.trim()}` : ""
+      }`;
+      log({ level: "error", message, source: "image-cropper" });
+      reject(new Error(message));
+    });
   });
 
+  log({
+    level: "info",
+    message: "ImageCropper requirements installed",
+    source: "image-cropper",
+  });
   await writeFile(marker, "");
   return python;
 }

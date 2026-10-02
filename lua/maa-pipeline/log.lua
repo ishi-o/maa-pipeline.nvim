@@ -1,16 +1,29 @@
 local M = {}
 
 local buffer_name = "maa-pipeline://runtime"
+local namespace = vim.api.nvim_create_namespace("maa_pipeline_log")
 
 local state = {
   entries = {},
   filter = {},
-  expanded = {},
   line_entries = {},
   line_tokens = {},
+  line_kinds = {},
 }
 
-local adapter
+local render
+
+local family_hl = {
+  Task = "MaaPipelineLogTask",
+  Node = "MaaPipelineLogNode",
+  Next = "MaaPipelineLogNext",
+  Reco = "MaaPipelineLogReco",
+  Action = "MaaPipelineLogAction",
+  Loading = "MaaPipelineLogLoading",
+  Freeze = "MaaPipelineLogFreeze",
+  Ctrl = "MaaPipelineLogCtrl",
+  Plain = "MaaPipelineLogPlain",
+}
 
 local function is_null(value)
   return value == nil or value == vim.NIL
@@ -27,65 +40,30 @@ local function field(object, key)
   return value
 end
 
-local function level_hl(entry)
-  local level = entry.level or "info"
-  if level == "error" then
-    return "logError"
-  end
-  if level == "warn" then
-    return "logWarn"
-  end
-  if level == "debug" or level == "verbose" or level == "silly" or level == "http" then
-    return "logDebug"
-  end
-  return "logInfo"
-end
-
-local function family_hl(family)
-  if family == "Task" then
-    return "MaaPipelineLogTask"
-  end
-  if family == "Node" then
-    return "MaaPipelineLogNode"
-  end
-  if family == "Next" then
-    return "MaaPipelineLogNext"
-  end
-  if family == "Reco" then
-    return "MaaPipelineLogReco"
-  end
-  if family == "Action" then
-    return "MaaPipelineLogAction"
-  end
-  if family == "Loading" then
-    return "MaaPipelineLogLoading"
-  end
-  if family == "Freeze" then
-    return "MaaPipelineLogFreeze"
-  end
-  if family == "Ctrl" then
-    return "MaaPipelineLogCtrl"
-  end
-  return "MaaPipelineLogPlain"
+local function contains(list, value)
+  return #list == 0 or vim.tbl_contains(list, value)
 end
 
 local function matches(entry, filter)
-  if filter.source and not vim.tbl_contains(filter.source, entry.source) then
+  if type(filter) == "function" then
+    local ok, result = pcall(filter, entry)
+    return ok and result == true
+  end
+
+  filter = filter or {}
+  if filter.source and not contains(filter.source, entry.source) then
     return false
   end
-  if filter.family and not vim.tbl_contains(filter.family, entry.family or "Plain") then
+  if filter.family and not contains(filter.family, entry.family or "Plain") then
     return false
   end
-  if filter.phase and not vim.tbl_contains(filter.phase, entry.phase or "") then
+  if filter.phase and not contains(filter.phase, entry.phase or "") then
     return false
   end
-  if filter.algorithm then
-    local algorithm = field(entry.reco, "algorithm") or ""
-    if not vim.tbl_contains(filter.algorithm, algorithm) then
-      return false
-    end
+  if filter.algorithm and not contains(filter.algorithm, field(entry.reco, "algorithm") or "") then
+    return false
   end
-  if filter.taskId and field(entry.ids, "taskId") ~= filter.taskId then
+  if filter.taskId ~= nil and field(entry.ids, "taskId") ~= filter.taskId then
     return false
   end
   if filter.name then
@@ -94,11 +72,14 @@ local function matches(entry, filter)
       return false
     end
   end
-  if filter.level and not vim.tbl_contains(filter.level, entry.level) then
+  if filter.level and not contains(filter.level, entry.level or "info") then
     return false
   end
-  if filter.text and not entry.raw:lower():find(filter.text:lower(), 1, true) then
-    return false
+  if filter.text then
+    local raw = entry.raw or ""
+    if not raw:lower():find(filter.text:lower(), 1, true) then
+      return false
+    end
   end
   return true
 end
@@ -109,25 +90,18 @@ end
 
 local function fmt_ids(entry)
   local ids = {}
-  local task_id = field(entry.ids, "taskId")
-  local node_id = field(entry.ids, "nodeId")
-  local reco_id = field(entry.ids, "recoId")
-  local action_id = field(entry.ids, "actionId")
-  local wf_id = field(entry.ids, "wfId")
-  if task_id then
-    table.insert(ids, string.format("task_id=%s", task_id))
-  end
-  if node_id then
-    table.insert(ids, string.format("node_id=%s", node_id))
-  end
-  if reco_id then
-    table.insert(ids, string.format("reco_id=%s", reco_id))
-  end
-  if action_id then
-    table.insert(ids, string.format("action_id=%s", action_id))
-  end
-  if wf_id then
-    table.insert(ids, string.format("wf_id=%s", wf_id))
+  local values = {
+    { key = "taskId", label = "task_id" },
+    { key = "nodeId", label = "node_id" },
+    { key = "recoId", label = "reco_id" },
+    { key = "actionId", label = "action_id" },
+    { key = "wfId", label = "wf_id" },
+  }
+  for _, value in ipairs(values) do
+    local id = field(entry.ids, value.key)
+    if id then
+      table.insert(ids, string.format("%s=%s", value.label, id))
+    end
   end
   return #ids > 0 and string.format(" (%s)", table.concat(ids, ", ")) or ""
 end
@@ -135,163 +109,222 @@ end
 local function segment(parts, segments, text, hl, token_kind, token_value)
   local start = #parts + 1
   table.insert(parts, text)
-  local finish = #parts
-  table.insert(segments, { start = start, finish = finish, hl = hl })
-  if token_kind and token_value then
-    table.insert(segments, {
-      start = start,
-      finish = finish,
-      token = { kind = token_kind, value = token_value },
-    })
-  end
+  table.insert(segments, {
+    start = start,
+    finish = #parts,
+    hl = hl,
+    token_kind = token_kind,
+    token_value = token_value,
+  })
 end
 
-local function default_render(entry)
-  local parts = {}
-  local segments = {}
+local function render_header(parts, segments, entry)
+  segment(parts, segments, string.format("[%s]", (entry.level or "info"):upper()))
+  segment(parts, segments, " ")
+  segment(
+    parts,
+    segments,
+    string.format("[%s]", entry.source or "unknown"),
+    "MaaPipelineLogSource",
+    "source",
+    entry.source or "unknown"
+  )
+  segment(parts, segments, " ")
+end
 
-  local level_text = string.format("[%s]", (entry.level or "info"):upper())
-  segment(parts, segments, level_text, level_hl(entry))
-  segment(parts, segments, " ", "MaaPipelineLogPlain")
+local function render_name(parts, segments, name)
+  segment(parts, segments, name, nil, "name", name)
+  segment(parts, segments, " ")
+end
 
-  local source_text = string.format("[%s]", entry.source or "unknown")
-  segment(parts, segments, source_text, "MaaPipelineLogSource", "source", entry.source or "unknown")
-  segment(parts, segments, " ", "MaaPipelineLogPlain")
+local renderers = {}
 
-  if entry.kind == "plain" then
-    local body = entry.raw:gsub("^%[[^%]]+%]%s*", "")
-    segment(parts, segments, body, "MaaPipelineLogPlain")
-    return parts, segments
+function renderers.Task(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  segment(parts, segments, "[Task]", family_hl.Task)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    render_name(parts, segments, context.name)
   end
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
 
-  local family = entry.family or "Plain"
-  local phase = entry.phase and string.format("%s ", entry.phase) or ""
-  local name = field(entry, "name") or field(entry, "entry") or ""
-
-  if family == "Task" then
-    segment(parts, segments, string.format("[Task] %s", phase), family_hl("Task"))
-    if name ~= "" then
-      segment(parts, segments, name, "MaaPipelineLogPlain", "name", name)
-      segment(parts, segments, " ", "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Node" then
-    segment(parts, segments, string.format("[Node] %s", phase), family_hl("Node"))
-    if name ~= "" then
-      segment(parts, segments, name, "MaaPipelineLogPlain", "name", name)
-      segment(parts, segments, " ", "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Next" then
-    local list = {}
-    for _, item in ipairs(entry.list or {}) do
-      table.insert(list, type(item) == "string" and item or (field(item, "name") or "?"))
-    end
-    segment(parts, segments, string.format("[Next] %s", phase), family_hl("Next"))
-    if name ~= "" then
-      segment(parts, segments, name, "MaaPipelineLogPlain", "name", name)
-      segment(parts, segments, " -> ", "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, table.concat(list, ", "), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Reco" then
-    local reco = is_null(entry.reco) and nil or entry.reco
-    local algo = field(reco, "algorithm") or ""
-    local score = field(reco, "score")
-    local text = field(reco, "text")
-    local box = field(reco, "box")
-    segment(parts, segments, string.format("[Reco] %s", phase), family_hl("Reco"))
-    if name ~= "" then
-      segment(parts, segments, name, "MaaPipelineLogPlain", "name", name)
-      segment(parts, segments, " · ", "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, algo, "MaaPipelineLogPlain")
-    if text then
-      segment(parts, segments, " " .. string.format("%q", text), "MaaPipelineLogPlain")
-    end
-    if score then
-      segment(parts, segments, " " .. tostring(score), "MaaPipelineLogPlain")
-    end
-    if box then
-      segment(parts, segments, " box=" .. fmt_box(box), "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Action" then
-    local details = is_null(entry.actionDetails) and nil or entry.actionDetails
-    local act = field(entry, "action") or field(details, "action") or ""
-    local box = field(details, "box")
-    segment(parts, segments, string.format("[Action] %s", phase), family_hl("Action"))
-    if act ~= "" then
-      segment(parts, segments, act, "MaaPipelineLogPlain")
-    end
-    if box then
-      segment(parts, segments, " box=" .. fmt_box(box), "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Ctrl" then
-    local act = field(entry, "action") or name
-    segment(parts, segments, "[Ctrl] ", family_hl("Ctrl"))
-    if act ~= "" then
-      segment(parts, segments, act, "MaaPipelineLogPlain", "name", act)
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Loading" then
-    local path = field(entry, "entry") or field(entry, "name") or ""
-    segment(parts, segments, "[Loading] ", family_hl("Loading"))
-    segment(parts, segments, "Bundle " .. path, "MaaPipelineLogPlain")
-    return parts, segments
-  elseif family == "Freeze" then
-    segment(parts, segments, string.format("[Freeze] %s", phase), family_hl("Freeze"))
-    if name ~= "" then
-      segment(parts, segments, name, "MaaPipelineLogPlain", "name", name)
-      segment(parts, segments, " ", "MaaPipelineLogPlain")
-    end
-    local elapsed = field(entry, "elapsed")
-    if elapsed then
-      segment(parts, segments, string.format("elapsed=%sms", elapsed), "MaaPipelineLogPlain")
-    end
-    segment(parts, segments, fmt_ids(entry), "MaaPipelineLogPlain")
-    return parts, segments
+function renderers.Node(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  segment(parts, segments, "[Node]", family_hl.Node)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    render_name(parts, segments, context.name)
   end
-  segment(parts, segments, string.format("[Plain] %s", phase), family_hl("Plain"))
-  if name ~= "" then
-    segment(parts, segments, name, "MaaPipelineLogPlain")
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
+
+function renderers.Next(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local values = field(entry, "list") or {}
+  local list = {}
+  for _, item in ipairs(values) do
+    table.insert(list, type(item) == "string" and item or (field(item, "name") or "?"))
+  end
+  segment(parts, segments, "[Next]", family_hl.Next)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    render_name(parts, segments, context.name)
+    segment(parts, segments, "-> ")
+  end
+  segment(parts, segments, table.concat(list, ", "))
+  return parts, segments
+end
+
+function renderers.Reco(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local reco = field(entry, "reco") or {}
+  local algorithm = field(reco, "algorithm") or ""
+  local text = field(reco, "text")
+  local score = field(reco, "score")
+  local box = field(reco, "box")
+  segment(parts, segments, "[Reco]", family_hl.Reco)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    render_name(parts, segments, context.name)
+    segment(parts, segments, "· ")
+  end
+  segment(parts, segments, algorithm)
+  if text then
+    segment(parts, segments, " " .. string.format("%q", text))
+  end
+  if score then
+    segment(parts, segments, " " .. tostring(score))
+  end
+  if box then
+    segment(parts, segments, " box=" .. fmt_box(box))
+  end
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
+
+function renderers.Action(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local details = field(entry, "actionDetails") or {}
+  local action = field(entry, "action") or field(details, "action") or ""
+  local box = field(details, "box")
+  segment(parts, segments, "[Action]", family_hl.Action)
+  segment(parts, segments, " " .. context.phase)
+  if action ~= "" then
+    segment(parts, segments, action)
+  end
+  if box then
+    segment(parts, segments, " box=" .. fmt_box(box))
+  end
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
+
+function renderers.Ctrl(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local action = field(entry, "action") or context.name
+  segment(parts, segments, "[Ctrl]", family_hl.Ctrl)
+  segment(parts, segments, " ")
+  if action ~= "" then
+    segment(parts, segments, action, nil, "name", action)
+  end
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
+
+function renderers.Loading(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local path = field(entry, "entry") or field(entry, "name") or ""
+  segment(parts, segments, "[Loading]", family_hl.Loading)
+  segment(parts, segments, " " .. context.phase)
+  segment(parts, segments, "Bundle " .. path)
+  return parts, segments
+end
+
+function renderers.Freeze(context)
+  local parts, segments, entry = context.parts, context.segments, context.entry
+  local elapsed = field(entry, "elapsed")
+  segment(parts, segments, "[Freeze]", family_hl.Freeze)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    render_name(parts, segments, context.name)
+  end
+  if elapsed then
+    segment(parts, segments, string.format("elapsed=%sms", elapsed))
+  end
+  segment(parts, segments, fmt_ids(entry))
+  return parts, segments
+end
+
+function renderers.Plain(context)
+  local parts, segments = context.parts, context.segments
+  segment(parts, segments, "[Plain]", family_hl.Plain)
+  segment(parts, segments, " " .. context.phase)
+  if context.name ~= "" then
+    segment(parts, segments, context.name)
   end
   return parts, segments
 end
 
-local function default_render_details(entry)
+local function render_entry(entry)
+  local parts = {}
+  local segments = {}
+  render_header(parts, segments, entry)
+
+  if entry.kind == "plain" then
+    local body = entry.raw:gsub("^%[[^%]]+%]%s*", "")
+    segment(parts, segments, "[Plain]", family_hl.Plain)
+    segment(parts, segments, " ")
+    segment(parts, segments, body)
+    return parts, segments
+  end
+
+  local family = entry.family or "Plain"
+  local context = {
+    entry = entry,
+    parts = parts,
+    segments = segments,
+    phase = entry.phase and (entry.phase .. " ") or "",
+    name = field(entry, "name") or field(entry, "entry") or "",
+  }
+  return renderers[family](context)
+end
+
+local function render_entry_details(entry)
   local lines = {}
   local details = field(entry, "details")
   if details then
     local ok, encoded = pcall(vim.json.encode, details)
-    if ok then
-      table.insert(lines, encoded)
-    else
-      table.insert(lines, vim.inspect(details))
-    end
+    table.insert(lines, ok and encoded or vim.inspect(details))
   end
-  if entry.list then
+  local list = field(entry, "list")
+  if list then
     table.insert(lines, "NextList:")
-    for _, item in ipairs(entry.list) do
-      table.insert(lines, "  " .. vim.inspect(item))
+    for _, item in ipairs(list) do
+      table.insert(lines, vim.inspect(item))
     end
   end
-  if entry.nested then
+  local nested = field(entry, "nested")
+  if nested then
     table.insert(lines, "Nested recognizers:")
-    for _, nested_entry in ipairs(entry.nested) do
-      table.insert(lines, "  " .. table.concat(default_render(nested_entry), ""))
+    for _, nested_entry in ipairs(nested) do
+      table.insert(lines, table.concat(render_entry(nested_entry), ""))
     end
   end
   return lines
 end
 
-local default_adapter = { render = default_render, render_details = default_render_details }
+local default_render = { render = render_entry, render_details = render_entry_details }
+
+local function configure_window(win)
+  local window = vim.wo[win]
+  window.foldmethod = "expr"
+  window.foldexpr = "v:lua.require('maa-pipeline.log').foldexpr()"
+  window.foldlevel = 0
+  window.foldenable = true
+end
 
 local function ensure_buffer(client_id)
   local buffer = vim.fn.bufnr(buffer_name)
@@ -302,21 +335,29 @@ local function ensure_buffer(client_id)
     vim.bo[buffer].bufhidden = "hide"
     vim.bo[buffer].swapfile = false
     vim.bo[buffer].filetype = "log"
-    vim.api.nvim_buf_clear_namespace(buffer, -1, 0, -1)
+    vim.api.nvim_create_autocmd("BufWinEnter", {
+      buffer = buffer,
+      callback = function()
+        configure_window(vim.api.nvim_get_current_win())
+      end,
+    })
+    vim.keymap.set("n", "<CR>", M.click_filter, { buffer = buffer, silent = true })
+    vim.keymap.set("n", "f", M.filter, { buffer = buffer, silent = true })
   end
   vim.b[buffer].maa_pipeline_client_id = client_id
-  vim.cmd("highlight default link MaaPipelineLogSource Normal")
-  vim.cmd("highlight default link MaaPipelineLogPlain Normal")
-  vim.cmd("highlight default link MaaPipelineLogTask Title")
-  vim.cmd("highlight default link MaaPipelineLogNode Identifier")
-  vim.cmd("highlight default link MaaPipelineLogNext Statement")
-  vim.cmd("highlight default link MaaPipelineLogReco Type")
-  vim.cmd("highlight default link MaaPipelineLogAction Function")
-  vim.cmd("highlight default link MaaPipelineLogLoading Special")
-  vim.cmd("highlight default link MaaPipelineLogFreeze PreProc")
-  vim.cmd("highlight default link MaaPipelineLogCtrl Constant")
-  vim.keymap.set("n", "<CR>", M.click_filter, { buffer = buffer, silent = true })
-  vim.keymap.set("n", "<Tab>", M.toggle_expand, { buffer = buffer, silent = true })
+  vim.cmd("highlight default link MaaPipelineLogSource Title")
+  for _, highlight in pairs(family_hl) do
+    local target = highlight == "MaaPipelineLogTask" and "Title"
+      or highlight == "MaaPipelineLogNode" and "Identifier"
+      or highlight == "MaaPipelineLogNext" and "Statement"
+      or highlight == "MaaPipelineLogReco" and "Type"
+      or highlight == "MaaPipelineLogAction" and "Function"
+      or highlight == "MaaPipelineLogLoading" and "Special"
+      or highlight == "MaaPipelineLogFreeze" and "PreProc"
+      or highlight == "MaaPipelineLogCtrl" and "Constant"
+      or "Normal"
+    vim.cmd(string.format("highlight default link %s %s", highlight, target))
+  end
   return buffer
 end
 
@@ -332,8 +373,7 @@ local function byte_range(parts, start_index, finish_index)
   return start, finish
 end
 
-local function append_line(buffer, entry, parts, segments)
-  local line = table.concat(parts, "")
+local function append_line(buffer, entry, line, parts, segments, line_kind)
   local count = vim.api.nvim_buf_line_count(buffer)
   local start = count
   local finish = count
@@ -341,32 +381,57 @@ local function append_line(buffer, entry, parts, segments)
     start = 0
     finish = 1
   end
+  local row = start + 1
+  state.line_entries[row] = entry
+  state.line_kinds[row] = line_kind
+  state.line_tokens[row] = nil
   vim.bo[buffer].modifiable = true
   vim.api.nvim_buf_set_lines(buffer, start, finish, false, { line })
   vim.bo[buffer].modifiable = false
+
   local tokens = {}
   for _, seg in ipairs(segments) do
-    local col_start, col_end = byte_range(parts, seg.start, seg.finish)
     if seg.hl then
-      vim.api.nvim_buf_add_highlight(buffer, -1, seg.hl, start, col_start, col_end)
+      local col_start, col_end = byte_range(parts, seg.start, seg.finish)
+      vim.api.nvim_buf_add_highlight(buffer, namespace, seg.hl, start, col_start, col_end)
     end
-    if seg.token then
+    if seg.token_kind and seg.token_value then
+      local col_start, col_end = byte_range(parts, seg.start, seg.finish)
       table.insert(tokens, {
-        kind = seg.token.kind,
-        value = seg.token.value,
+        kind = seg.token_kind,
+        value = seg.token_value,
         start = col_start,
         finish = col_end,
       })
     end
   end
-  state.line_entries[start + 1] = entry
   if #tokens > 0 then
-    state.line_tokens[start + 1] = tokens
+    state.line_tokens[row] = tokens
+  end
+  return row
+end
+
+local function append_entry(buffer, entry)
+  local parts, segments = render.render(entry)
+  local details = render.render_details and render.render_details(entry) or {}
+  local line_kind = #details > 0 and "entry" or "plain"
+  append_line(buffer, entry, table.concat(parts, ""), parts, segments, line_kind)
+  for _, detail in ipairs(details) do
+    append_line(buffer, nil, detail, { detail }, {}, "detail")
   end
 end
 
-function M.use(new_adapter)
-  adapter = new_adapter or default_adapter
+local function show_buffer(buffer)
+  if vim.fn.bufwinid(buffer) >= 0 then
+    return
+  end
+  vim.cmd("botright 10split")
+  vim.api.nvim_win_set_buf(0, buffer)
+  configure_window(0)
+end
+
+function M.use(new_render)
+  render = new_render or default_render
 end
 
 function M.append(client_id, result)
@@ -386,12 +451,8 @@ function M.append(client_id, result)
   end
 
   local buffer = ensure_buffer(client_id)
-  local parts, segments = adapter.render(entry)
-  append_line(buffer, entry, parts, segments)
-  if vim.fn.bufwinid(buffer) < 0 then
-    vim.cmd("botright 10split")
-    vim.api.nvim_win_set_buf(0, buffer)
-  end
+  append_entry(buffer, entry)
+  show_buffer(buffer)
 end
 
 function M.set_filter(filter)
@@ -400,63 +461,78 @@ function M.set_filter(filter)
   vim.bo[buffer].modifiable = true
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {})
   vim.bo[buffer].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   state.line_entries = {}
   state.line_tokens = {}
+  state.line_kinds = {}
   for _, entry in ipairs(state.entries) do
-    local ok = pcall(function()
+    pcall(function()
       if matches(entry, state.filter) then
-        local parts, segments = adapter.render(entry)
-        append_line(buffer, entry, parts, segments)
-        local key = vim.inspect(entry)
-        if state.expanded[key] then
-          for _, detail in ipairs(adapter.render_details and adapter.render_details(entry) or {}) do
-            append_line(buffer, entry, { "  " .. detail }, { { start = 1, finish = 1, hl = "MaaPipelineLogPlain" } })
-          end
-        end
+        append_entry(buffer, entry)
       end
     end)
-    if not ok then
-      -- 单条渲染失败不中断重放
-    end
   end
 end
 
-function M.toggle_expand()
-  local win = vim.api.nvim_get_current_win()
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  local entry = state.line_entries[row]
-  if not entry then
+function M.foldexpr()
+  local kind = state.line_kinds[vim.v.lnum]
+  if kind == "entry" then
+    return ">1"
+  end
+  if kind == "detail" then
+    return "1"
+  end
+  return "0"
+end
+
+function M.filter(expression)
+  if expression == nil then
+    vim.ui.input({ prompt = "Lua log filter: " }, function(input)
+      if input ~= nil then
+        M.filter(input)
+      end
+    end)
     return
   end
-  local key = vim.inspect(entry)
-  state.expanded[key] = not state.expanded[key]
-  M.set_filter(state.filter)
-  local count = vim.api.nvim_buf_line_count(0)
-  local target = math.min(row, count)
-  if target >= 1 then
-    pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
+  if expression:match("^%s*$") then
+    M.set_filter({})
+    return
   end
+  local factory, factory_error = load(
+    string.format("return function(entry) return %s end", expression),
+    "MaaPipelineLogFilter"
+  )
+  if not factory then
+    vim.notify(factory_error, vim.log.levels.ERROR)
+    return
+  end
+  local ok, filter = pcall(factory)
+  if not ok or type(filter) ~= "function" then
+    vim.notify("Invalid Maa pipeline log filter", vim.log.levels.ERROR)
+    return
+  end
+  M.set_filter(filter)
 end
 
 function M.click_filter()
-  local win = vim.api.nvim_get_current_win()
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  local col = vim.api.nvim_win_get_cursor(win)[2]
-  local entry = state.line_entries[row]
-  if not entry then
-    return
-  end
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
   local tokens = state.line_tokens[row] or {}
   for _, token in ipairs(tokens) do
     if col >= token.start and col < token.finish then
       if token.kind == "source" then
-        state.filter.source = { token.value }
+        M.set_filter(function(value)
+          return value.source == token.value
+        end)
       elseif token.kind == "taskId" then
-        state.filter.taskId = tonumber(token.value)
+        local task_id = tonumber(token.value)
+        M.set_filter(function(value)
+          return field(value.ids, "taskId") == task_id
+        end)
       elseif token.kind == "name" then
-        state.filter.name = token.value
+        M.set_filter(function(value)
+          return field(value, "name") == token.value
+        end)
       end
-      M.set_filter(state.filter)
       return
     end
   end
@@ -471,8 +547,7 @@ function M.export(format)
       if format == "json" then
         table.insert(lines, vim.json.encode(entry))
       else
-        local parts = adapter.render(entry)
-        table.insert(lines, table.concat(parts, ""))
+        table.insert(lines, table.concat(render.render(entry), ""))
       end
     end
   end
@@ -497,6 +572,6 @@ function M.error(client_id, error, fallback)
   M.append(client_id, { level = "error", message = message, source = "maa-runtime" })
 end
 
-M.use(default_adapter)
+M.use(default_render)
 
 return M

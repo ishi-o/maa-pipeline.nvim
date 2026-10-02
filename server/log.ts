@@ -3,7 +3,6 @@ import type {
   LogCategory,
   LogEntry,
   LogFamily,
-  Filter,
   LogPhase,
   NextListEntry,
   RecognitionDetails,
@@ -149,34 +148,6 @@ function nextList(value: unknown): NextListEntry[] | undefined {
   );
 }
 
-function unchangedNextList(body: Record<string, unknown>): boolean {
-  const info = body.info;
-  if (typeof info === "string" && /unchanged/i.test(info)) return true;
-  const list = body.list;
-  const entry = body.entry;
-  if (!Array.isArray(list) || list.length !== 1) return false;
-  const item = list[0];
-  if (item === entry) return true;
-  return isRecord(item) && text(item.name) === entry;
-}
-
-function startupNoise(value: string): boolean {
-  return /(?:^|\W)(?:sonic|ast)(?:\W|$)|agent bootstrap/i.test(value);
-}
-
-function lowValue(
-  body: Record<string, unknown>,
-  family: LogFamily | undefined,
-  phase: LogPhase | undefined,
-  level: LogCategory,
-  raw: string,
-): boolean {
-  // if (family === "Next" && unchangedNextList(body)) return true;
-  // if (family === "Action" && phase === "Starting" && body.action === "DoNothing") return true;
-  // if ((level === "warn" || level === "error") && startupNoise(raw)) return true;
-  return false;
-}
-
 export function parseLogLine(line: string, defaultSource?: Source): LogEntry | null {
   if (!line.trim()) return null;
   const match = LINE_PATTERN.exec(line);
@@ -186,7 +157,6 @@ export function parseLogLine(line: string, defaultSource?: Source): LogEntry | n
   const record = isRecord(parsed) ? parsed : undefined;
 
   if (!record) {
-    if ((parsedLevel === "warn" || parsedLevel === "error") && startupNoise(line)) return null;
     return {
       kind: "plain",
       level: parsedLevel,
@@ -200,7 +170,6 @@ export function parseLogLine(line: string, defaultSource?: Source): LogEntry | n
   const source: Source = text(record.source) ?? defaultSource ?? "unknown";
   const msg = text(record.msg);
   if (!msg) {
-    if ((parsedLevel === "warn" || parsedLevel === "error") && startupNoise(line)) return null;
     return {
       kind: "plain",
       level: parsedLevel,
@@ -222,8 +191,6 @@ export function parseLogLine(line: string, defaultSource?: Source): LogEntry | n
       details: record,
     };
   }
-  if (lowValue(record, family, phase, parsedLevel, line)) return null;
-
   const reco = recognition(record.reco_details);
   const parent: LogEntry = {
     kind: "event",
@@ -255,27 +222,6 @@ export function parseLogLine(line: string, defaultSource?: Source): LogEntry | n
     nested: nested(reco?.detail, parent),
     details: record,
   };
-}
-
-function matchesList<T extends string>(value: T | undefined, filter: T[] | undefined): boolean {
-  if (!filter?.length) return true;
-  return value !== undefined && filter.includes(value);
-}
-
-export function matches(entry: LogEntry, filter: Filter): boolean {
-  if (!matchesList(entry.source, filter.source)) return false;
-  if (entry.kind !== "plain" && !matchesList(entry.family, filter.family)) return false;
-  if (entry.kind !== "plain" && !matchesList(entry.phase, filter.phase)) return false;
-  if (entry.kind !== "plain" && !matchesList(entry.reco?.algorithm, filter.algorithm)) return false;
-  if (!matchesList(entry.level, filter.level)) return false;
-  if (filter.taskId !== undefined && entry.ids.taskId !== filter.taskId) return false;
-  if (filter.name && !entry.name?.toLowerCase().includes(filter.name.toLowerCase())) return false;
-  if (filter.text && !entry.raw.toLowerCase().includes(filter.text.toLowerCase())) return false;
-  return true;
-}
-
-export function defaultLogFilter(): Filter {
-  return { phase: ["Starting", "Succeeded", "Failed"] };
 }
 
 export function formatRuntimeLogLine(payload: RuntimeLogPayload): string {

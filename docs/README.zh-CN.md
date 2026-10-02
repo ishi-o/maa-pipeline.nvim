@@ -5,7 +5,13 @@
 基于 [Maa Support Extension](https://github.com/neko-para/maa-support-extension)
 中的解析器和索引，为 Neovim 提供 MaaFramework Pipeline 支持
 
-支持文件类型检测、补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持，也可以直接在 Neovim 中运行 MaaFramework 任务
+## 功能
+
+- LSP 功能：补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持
+- Maa JSON/JSONC Pipeline 的文件类型检测
+- 直接运行 MaaFramework 任务
+- 运行日志支持原生 `ft=log` 高亮、来源和类型高亮、Lua 过滤、折叠、JSON 或文本导出
+- 使用 ImageCropper 进行截图裁剪
 
 ## 安装
 
@@ -59,7 +65,9 @@ vim.lsp.enable("maa_pipeline")
 默认配置如下：
 
 ```lua
-require("maa-pipeline.nvim").setup() -- 注册插件提供的默认配置
+require("maa-pipeline.nvim").setup({
+  stop_hotkey = nil, -- 例如 "Ctrl+Alt+S"；为 nil 时不注册全局热键
+})
 
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil 保留插件自带的 Node.js 命令；也可用列表指定其他命令
@@ -86,63 +94,62 @@ vim.lsp.config("maa_pipeline", {
 vim.lsp.enable("maa_pipeline") -- 覆盖完成后再启用
 ```
 
-例如，强制使用 Maa 模式并显示中文消息：
+Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等输入行为需要与
+目标应用保持相同权限级别，Neovim 本身保持普通权限
+
+## 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `:MaaPipelineSelectController` | 选择并配置 Maa 控制器 |
+| `:MaaPipelineStop` | 停止正在运行的 Maa 任务 |
+| `:MaaPipelineRun` | 运行光标所在的 Maa 任务 |
+| `:MaaPipelineScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
+| `:MaaPipelineLogFilter [expression]` | 使用 Lua 表达式过滤运行日志；空表达式清除过滤 |
+| `:MaaPipelineLogExportJson` | 将过滤后的运行日志导出为 JSON |
+| `:MaaPipelineLogExportText` | 将过滤后的运行日志导出为纯文本 |
+
+## 代码操作
+
+| 操作 | 说明 |
+| --- | --- |
+| `Run Maa task` | 运行光标所在任务 |
+| `Select Maa controller` | 选择 `interface.json/jsonc` 中声明的控制器 |
+| `ScreenShot` | 截图并裁剪 |
+| `Extract locale` | 将可本地化的任务引用移动到本地化文件 |
+
+## 深入
+
+### 缓冲区快捷键
+
+| 作用域 | 按键 | 行为 |
+| --- | --- | --- |
+| 运行日志 | `<CR>` | 按点击的来源、任务 ID 或名称过滤 |
+| 运行日志 | `f` | 输入 Lua 过滤表达式 |
+| 运行日志 | `zc` | 关闭日志折叠 |
+| 运行日志 | `zv` | 打开光标所在日志折叠 |
+| ImageCropper | `S` | 保存裁剪图 |
+| ImageCropper | `R` / `C` | 只复制 ROI |
+
+### 自定义渲染
 
 ```lua
-require("maa-pipeline.nvim").setup()
-
-local capabilities = vim.lsp.protocol.make_client_capabilities()
-capabilities.textDocument.completion.completionItem.snippetSupport = true -- 声明支持片段补全
-
-vim.lsp.config("maa_pipeline", {
-  capabilities = capabilities, -- 也可替换为 blink.cmp、nvim-cmp 等补全插件提供的 capabilities
-  on_attach = function(client, bufnr) -- 在这里配置当前 LSP 客户端和缓冲区
-    vim.keymap.set("n", "gd", vim.lsp.buf.definition, { buffer = bufnr })
+local render = {
+  render = function(entry)
+    return { entry.raw or "" }, {}
   end,
-  init_options = {
-    mode = "maa",
-    locale = "zh",
-  },
-})
-vim.lsp.enable("maa_pipeline")
+  render_details = function(entry)
+    return { vim.inspect(entry.details) }
+  end,
+}
+
+require("maa-pipeline.log").use(render)
 ```
-
-## 运行任务
-
-使用 `Code Action` 执行光标选中的
-运行日志会显示在一个小窗口中，使用 `:MaaPipelineStop` 停止任务
-也可以使用 `:MaaPipelineRun` 直接执行光标所在的任务
-首次运行会下载 MaaFramework；所选控制器需要目标游戏或应用时，请先打开它
-
-`MaaPipelineStop` 支持用户指定 Windows 全局热键，游戏在前台时也能触发：
-
-```lua
-require("maa-pipeline.nvim").setup({
-  stop_hotkey = "Ctrl+Alt+S",
-})
-```
-
-未设置 `stop_hotkey` 时不注册全局热键。Windows 下 `maa-runtime` 会始终以管理员
-权限启动，因为 `Seize` 等输入行为需要与目标应用保持相同权限级别。Neovim 本身
-保持普通权限。
-
-没有控制器配置时，运行任务会自动打开选择器
-也可以在 `interface.json/jsonc` 或 Pipeline 文件中使用 `:MaaPipelineSelectController`
-
-## 截图
-
-在 `interface.json/jsonc` 或 Pipeline 文件中执行 `:MaaPipelineScreenshot`，
-选择控制器后在 ImageCropper 中裁剪，再按提示输入图片名称。在
-ImageCropper 中按 `S` 保存裁剪图，或按 `R`/`C` 只复制 ROI。裁剪图会
-保存到当前资源的 `debug/screenshot`，选中的 ROI 会写入系统剪贴板。原
-始截图通过上游 Maa server 与 MaaFramework SDK 完成。
 
 ## 架构
 
-- Neovim 运行 Lua 客户端，并启动内置的 Node.js LSP 服务端。
+- Neovim 运行 Lua 客户端，并启动内置的 Node.js LSP 服务端
 - LSP 服务端使用 `@nekosu/maa-pipeline-manager` 解析项目，并启动独立的
-  `maa-runtime` 子进程。
+  `maa-runtime` 子进程
 - `maa-runtime` 使用 `@nekosu/maa-server` 创建控制器、资源和任务实例，
-  并启动 `interface.json` 里声明的外置 agent。
-- 运行日志中，`<-- 方法` 表示 Neovim 调用 Maa runtime，`--> 方法` 表示
-  Maa runtime 反向调用 Neovim。
+  并启动 `interface.json` 里声明的外置 agent

@@ -153,20 +153,7 @@ export interface LogEntry {
   details?: unknown;
 }
 
-export interface LogFilter {
-  source?: Source[];
-  family?: LogFamily[];
-  phase?: LogPhase[];
-  algorithm?: string[];
-  taskId?: number;
-  name?: string;
-  level?: LogLevel[];
-  text?: string;
-}
-
-export type Filter = LogFilter;
-
-export interface LogRenderAdapter {
+export interface LogRender {
   render(entry: LogEntry): string;
   render_details?(entry: LogEntry): string[];
 }
