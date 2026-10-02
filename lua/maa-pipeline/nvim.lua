@@ -1,4 +1,5 @@
 local M = {}
+
 local detect = require("maa-pipeline.detect")
 local controller = require("maa-pipeline.controller")
 local hotkey = require("maa-pipeline.hotkey")
@@ -79,6 +80,15 @@ function M.setup(options)
       runtime = options.runtime,
     },
   })
+  if options.log then
+    local log = require("maa-pipeline.log")
+    if options.log.render ~= nil then
+      log.use(options.log.render)
+    end
+    if options.log.key ~= nil then
+      log.set_key(options.log.key)
+    end
+  end
   if options.stop_hotkey then
     local registered = hotkey.register(options.stop_hotkey, stop_task)
     if not registered then
@@ -88,7 +98,10 @@ function M.setup(options)
     end
   elseif jit.os == "Windows" then
     vim.schedule(function()
-      vim.notify("MaaPipelineStop hotkey is disabled; set setup({ stop_hotkey = \"Ctrl+Alt+S\" }) to enable it", vim.log.levels.INFO)
+      vim.notify(
+        'MaaPipelineStop hotkey is disabled; set setup({ stop_hotkey = "Ctrl+Alt+S" }) to enable it',
+        vim.log.levels.INFO
+      )
     end)
   end
   vim.api.nvim_create_autocmd("VimLeavePre", {

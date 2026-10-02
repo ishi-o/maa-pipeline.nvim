@@ -66,7 +66,18 @@ vim.lsp.enable("maa_pipeline")
 
 ```lua
 require("maa-pipeline.nvim").setup({
-  stop_hotkey = nil, -- 例如 "Ctrl+Alt+S"；为 nil 时不注册全局热键
+  stop_hotkey = nil, -- 注册停止全局热键；为 nil 时不注册
+  log = {
+    key = {
+      click = "<CR>", -- 按光标处来源、任务 ID 或名称过滤；false 或 "" 表示不注册
+      filter = "f", -- 输入 Lua 过滤表达式；false 或 "" 表示不注册
+      help = "?", -- 查看过滤帮助；false 或 "" 表示不注册
+      keymap = "g?", -- 查看当前缓冲区快捷键；false 或 "" 表示不注册
+      close = "zc", -- 折叠光标处条目；false 或 "" 表示不注册
+      open = "zv", -- 展开光标处条目；false 或 "" 表示不注册
+    },
+    render = nil, -- 自定义渲染，见“深入”
+  },
 })
 
 vim.lsp.config("maa_pipeline", {
@@ -118,32 +129,52 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 | `ScreenShot` | 截图并裁剪 |
 | `Extract locale` | 将可本地化的任务引用移动到本地化文件 |
 
-## 深入
+## 进阶
 
-### 缓冲区快捷键
+### 日志过滤
 
-| 作用域 | 按键 | 行为 |
-| --- | --- | --- |
-| 运行日志 | `<CR>` | 按点击的来源、任务 ID 或名称过滤 |
-| 运行日志 | `f` | 输入 Lua 过滤表达式 |
-| 运行日志 | `zc` | 关闭日志折叠 |
-| 运行日志 | `zv` | 打开光标所在日志折叠 |
-| ImageCropper | `S` | 保存裁剪图 |
-| ImageCropper | `R` / `C` | 只复制 ROI |
+在运行日志缓冲区按 `f`，输入 Lua 表达式，留空清除，输入 `?` 查看帮助。表达式里字段可直接使用，不需要 `entry.` 前缀：
+
+```lua
+level == "error"
+level == "error" or level == "warn"
+family == "Reco"
+taskId == 3
+algorithm == "TemplateMatch"
+name and name:lower():find("startup", 1, true)
+raw and raw:find("recognition", 1, true)
+```
+
+可用字段：`level`、`source`、`family`、`phase`、`name`、`raw`、`kind`、`ids`、`taskId`、`nodeId`、`recoId`、`actionId`、`wfId`、`reco`、`algorithm`、`text`、`score`、`box`、`action`、`actionDetails`、`details`、`list`、`nested`、`elapsed`，以及原始的 `entry`
 
 ### 自定义渲染
 
 ```lua
-local render = {
+require("maa-pipeline.nvim").setup({
+  log = {
+    render = {
+      render = function(entry)
+        return { entry.raw or "" }, {}
+      end,
+      render_details = function(entry)
+        return { vim.inspect(entry.details) }
+      end,
+    },
+  },
+})
+```
+
+也可以直接调用：
+
+```lua
+require("maa-pipeline.log").use({
   render = function(entry)
     return { entry.raw or "" }, {}
   end,
   render_details = function(entry)
     return { vim.inspect(entry.details) }
   end,
-}
-
-require("maa-pipeline.log").use(render)
+})
 ```
 
 ## 架构

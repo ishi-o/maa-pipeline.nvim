@@ -3,7 +3,7 @@
 [中文](https://github.com/ishi-o/maa-pipeline.nvim/blob/main/docs/README.zh-CN.md) | English
 
 Neovim support for MaaFramework pipelines, reusing the parser and index from
-[Maa Support Extension](https://github.com/neko-para/maa-support-extension).
+[Maa Support Extension](https://github.com/neko-para/maa-support-extension)
 
 ## Features
 
@@ -69,7 +69,18 @@ The default configuration is:
 
 ```lua
 require("maa-pipeline.nvim").setup({
-  stop_hotkey = nil, -- e.g. "Ctrl+Alt+S"; no global hotkey is registered when nil
+  stop_hotkey = nil, -- register a global stop hotkey; no hotkey when nil
+  log = {
+    key = {
+      click = "<CR>", -- filter by token under cursor; false or "" disables it
+      filter = "f", -- prompt for a Lua filter expression; false or "" disables it
+      help = "?", -- show filter help; false or "" disables it
+      keymap = "g?", -- show keymap help; false or "" disables it
+      close = "zc", -- close the fold under the cursor; false or "" disables it
+      open = "zv", -- open the fold under the cursor; false or "" disables it
+    },
+    render = nil, -- custom render, see Going Further
+  },
 })
 
 vim.lsp.config("maa_pipeline", {
@@ -98,8 +109,8 @@ vim.lsp.enable("maa_pipeline") -- enable after applying overrides
 ```
 
 On Windows, `maa-runtime` starts with administrator permissions because input
-actions such as `Seize` require the same elevation as the target application.
-Neovim itself remains unelevated.
+actions such as `Seize` require the same elevation as the target application,
+while Neovim itself remains unelevated
 
 ## Commands
 
@@ -122,38 +133,63 @@ Neovim itself remains unelevated.
 | `ScreenShot` | Take and crop a screenshot |
 | `Extract locale` | Move a localizable task reference into the localization file |
 
-## Going Further
+## Advanced
 
-### Buffer Shortcuts
+### Log Filter
 
-| Scope | Key | Action |
-| --- | --- | --- |
-| Runtime log | `<CR>` | Filter by the clicked source, task ID, or name |
-| Runtime log | `f` | Prompt for a Lua filter expression |
-| Runtime log | `zc` | Close the log fold |
-| Runtime log | `zv` | Open the log fold under the cursor |
-| ImageCropper | `S` | Save the cropped image |
-| ImageCropper | `R` / `C` | Copy the ROI without saving an image |
+Press `f` in the runtime log buffer, type a Lua expression, leave it empty to
+clear, press `?` for help. Fields are available directly without the `entry.`
+prefix:
+
+```lua
+level == "error"
+level == "error" or level == "warn"
+family == "Reco"
+taskId == 3
+algorithm == "TemplateMatch"
+name and name:lower():find("startup", 1, true)
+raw and raw:find("recognition", 1, true)
+```
+
+Available fields: `level`, `source`, `family`, `phase`, `name`, `raw`, `kind`,
+`ids`, `taskId`, `nodeId`, `recoId`, `actionId`, `wfId`, `reco`, `algorithm`,
+`text`, `score`, `box`, `action`, `actionDetails`, `details`, `list`, `nested`,
+`elapsed`, and the raw `entry`
 
 ### Custom Render
 
 ```lua
-local render = {
+require("maa-pipeline.nvim").setup({
+  log = {
+    render = {
+      render = function(entry)
+        return { entry.raw or "" }, {}
+      end,
+      render_details = function(entry)
+        return { vim.inspect(entry.details) }
+      end,
+    },
+  },
+})
+```
+
+Or call it directly:
+
+```lua
+require("maa-pipeline.log").use({
   render = function(entry)
     return { entry.raw or "" }, {}
   end,
   render_details = function(entry)
     return { vim.inspect(entry.details) }
   end,
-}
-
-require("maa-pipeline.log").use(render)
+})
 ```
 
 ## Architecture
 
-- Neovim runs the Lua client and starts the bundled Node.js LSP server.
+- Neovim runs the Lua client and starts the bundled Node.js LSP server
 - The LSP server parses projects with `@nekosu/maa-pipeline-manager` and starts
-  a separate `maa-runtime` process.
+  a separate `maa-runtime` process
 - `maa-runtime` uses `@nekosu/maa-server` to create controller, resource, and
-  task instances, then launches external agents declared in `interface.json`.
+  task instances, then launches external agents declared in `interface.json`
