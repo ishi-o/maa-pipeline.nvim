@@ -4,7 +4,7 @@ import type { TextDocument } from "vscode-languageserver-textdocument";
 import { t } from "@nekosu/maa-locale";
 
 import { commands } from "./commands.ts";
-import { fileUriPath } from "./utils.ts";
+import { filePathFromUri } from "./utils.ts";
 import type { CodeActionProvider, MaaProject, ProviderContext } from "./types.ts";
 
 export function screenShotProvider(ctx: ProviderContext) {
@@ -107,7 +107,7 @@ export function codeActions(
   document: TextDocument,
   params: CodeActionParams,
 ): CodeAction[] {
-  const file = fileUriPath(document.uri);
+  const file = filePathFromUri(document.uri);
   if (!file) return [];
   const located = project.bundle.locateLayer(file);
   if (!located) return [];

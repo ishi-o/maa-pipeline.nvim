@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { AgentProject, ResolvedAgent, RuntimeAgent } from "./types.ts";
-import { fileExists, replaceProjectDir } from "./utils.ts";
+import { isRegularFile, expandProjectDir } from "./utils.ts";
 
 export function runtimeAgents(project: AgentProject): RuntimeAgent[] {
   const value = project.bundle.content.object.agent;
@@ -11,10 +11,10 @@ export function runtimeAgents(project: AgentProject): RuntimeAgent[] {
       ? [
           {
             ...agent,
-            child_exec: replaceProjectDir(agent.child_exec, project.root),
+            child_exec: expandProjectDir(agent.child_exec, project.root),
             ...(agent.child_args
               ? {
-                  child_args: agent.child_args.map((arg) => replaceProjectDir(arg, project.root)),
+                  child_args: agent.child_args.map((arg) => expandProjectDir(arg, project.root)),
                 }
               : {}),
           },
@@ -34,7 +34,7 @@ export async function resolveAgent(exec: string, cwd?: string): Promise<Resolved
       path.resolve(current, execName),
       path.resolve(current, "install", execName),
     ]) {
-      if (await fileExists(candidate)) {
+      if (await isRegularFile(candidate)) {
         executable = candidate;
         break;
       }

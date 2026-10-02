@@ -19,7 +19,7 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
-import { encode, formatSize, pngSize } from "./utils.ts";
+import { encodeBase64Json, formatByteSize, pngDimensions } from "./utils.ts";
 import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
 import type {
   ActiveTask,
@@ -189,7 +189,7 @@ export class RuntimeClient {
     manager.downloadProgress = (bytes: number) =>
       this.log({
         level: "info",
-        message: `${manager.downloadLabel} (${formatSize(bytes)})`,
+        message: `${manager.downloadLabel} (${formatByteSize(bytes)})`,
         source: "maa-runtime",
       });
 
@@ -241,7 +241,7 @@ export class RuntimeClient {
 
     const runtimeArgs = [
       runtimeScript,
-      encode({
+      encodeBase64Json({
         id,
         port: address.port,
         module: this.manager!.moduleFolder(this.options.resolvedVersion!),
@@ -693,7 +693,7 @@ export class RuntimeClient {
     if (this.active) {
       const image = await this.request<string>("getScreencap", this.active.handle);
       if (!image) throw new Error("Failed to take screenshot");
-      const size = pngSize(image);
+      const size = pngDimensions(image);
       return { image, roi: [0, 0, size.width, size.height] };
     }
     if (this.running) throw new Error(`Task ${this.running} is still starting`);
@@ -708,7 +708,7 @@ export class RuntimeClient {
       if (!handle) throw new RuntimeSetupError(setup?.error ?? "Failed to create Maa instance");
       const image = await this.request<string>("getScreencap", handle);
       if (!image) throw new Error("Failed to take screenshot");
-      const size = pngSize(image);
+      const size = pngDimensions(image);
       return { image, roi: [0, 0, size.width, size.height] };
     } finally {
       if (handle && !this.options.daemon) {

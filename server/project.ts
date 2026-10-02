@@ -3,12 +3,12 @@ import path from "node:path";
 
 import { FsContentLoader, FsContentWatcher, InterfaceBundle } from "@nekosu/maa-pipeline-manager";
 import {
-  configName,
-  fileExists,
-  findInterface,
-  inside,
-  normalizePath,
-  readConfig,
+  configValueName,
+  isRegularFile,
+  findInterfaceFile,
+  isPathInsideRoot,
+  absolutePath,
+  readProjectConfig,
 } from "./utils.ts";
 
 export class OverlayLoader extends FsContentLoader {
@@ -16,7 +16,7 @@ export class OverlayLoader extends FsContentLoader {
   versions = new Map<string, number>();
 
   set(file, text, version) {
-    const key = normalizePath(file);
+    const key = absolutePath(file);
     if (version !== undefined && this.versions.has(key) && version < this.versions.get(key)) return;
     if (version !== undefined) this.versions.set(key, version);
     if (text === undefined) this.overlays.delete(key);
@@ -24,7 +24,7 @@ export class OverlayLoader extends FsContentLoader {
   }
 
   async get(file) {
-    const key = normalizePath(file);
+    const key = absolutePath(file);
     return this.overlays.has(key) ? this.overlays.get(key) : super.get(key);
   }
 }
@@ -57,8 +57,8 @@ export class MaaProject {
     mode?: string;
     onChanged?: (project: MaaProject) => void;
   }) {
-    this.root = normalizePath(root);
-    this.interfaceFile = normalizePath(interfaceFile);
+    this.root = absolutePath(root);
+    this.interfaceFile = absolutePath(interfaceFile);
     this.maa =
       mode === "maa" || (mode === "auto" && existsSync(path.join(this.root, "src", "MaaCore")));
     this.loader = new OverlayLoader();
@@ -82,7 +82,7 @@ export class MaaProject {
   }
 
   isInside(file) {
-    return inside(file, this.root);
+    return isPathInsideRoot(file, this.root);
   }
 
   async init() {
@@ -105,13 +105,13 @@ export class MaaProject {
 
   async selectResource() {
     await this.bundle.flush();
-    const config = await readConfig(this.loader, this.root);
+    const config = await readProjectConfig(this.loader, this.root);
     this.config = config;
     const controllers = this.bundle.info.decls.filter(
       (decl) => decl.type === "interface.controller",
     );
     const resources = this.bundle.info.decls.filter((decl) => decl.type === "interface.resource");
-    this.controller = configName(config.controller) || controllers[0]?.name || "";
+    this.controller = configValueName(config.controller) || controllers[0]?.name || "";
     this.resource =
       (typeof config.resource === "string" ? config.resource : "") || resources[0]?.name || "";
     this.locale =
@@ -122,26 +122,26 @@ export class MaaProject {
   }
 
   setDocument(file, text, version) {
-    const key = normalizePath(file);
+    const key = absolutePath(file);
     this.loader.set(key, text, version);
     this.dirty.add(key);
   }
 
   async refreshFile(file) {
-    const key = normalizePath(file);
-    if (key === normalizePath(this.bundle.file)) {
+    const key = absolutePath(file);
+    if (key === absolutePath(this.bundle.file)) {
       this.bundle.content.dirty = true;
       await this.bundle.content.flush();
       return;
     }
-    const imported = this.bundle.imports.find((item) => normalizePath(item.file) === key);
+    const imported = this.bundle.imports.find((item) => absolutePath(item.file) === key);
     if (imported) {
       imported.dirty = true;
       await imported.flush();
       return;
     }
     const language = this.bundle.langBundle.langs.find(
-      (item) => normalizePath(path.join(this.root, item.file)) === key,
+      (item) => absolutePath(path.join(this.root, item.file)) === key,
     );
     if (language) {
       language.content.dirty = true;
@@ -202,16 +202,16 @@ export class ProjectManager {
   }
 
   byRoot(root) {
-    const normalized = normalizePath(root);
+    const normalized = absolutePath(root);
     return [...this.projects.values()].find((project) => project.root === normalized);
   }
 
   async ensure(file) {
     const existing = this.loaded(file);
     if (existing) return existing;
-    const interfaceFile = await findInterface(file, this.roots);
+    const interfaceFile = await findInterfaceFile(file, this.roots);
     if (!interfaceFile) return null;
-    const key = normalizePath(interfaceFile);
+    const key = absolutePath(interfaceFile);
     if (this.projects.has(key)) return this.projects.get(key);
     const project = new MaaProject({
       root: path.dirname(interfaceFile),

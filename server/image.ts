@@ -3,17 +3,26 @@ import { glob, mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { CroppedScreenshot } from "./types.ts";
-import { fileExists, findRepoRoot, log, pythonExecutable, venvDir, venvPython } from "./utils.ts";
+import {
+  absolutePath,
+  findRepositoryRoot,
+  imageCropperVenvDir,
+  imageCropperVenvPython,
+  isRegularFile,
+  log,
+  systemPythonExecutable,
+} from "./utils.ts";
 
 export async function findImageCropper(root: string) {
-  const repo = (await findRepoRoot(root)) ?? path.resolve(root);
+  const repository = await findRepositoryRoot(root);
+  const searchRoot = repository ?? path.dirname(absolutePath(root));
   for await (const entry of glob("**/ImageCropper/main.py", {
-    cwd: repo,
+    cwd: searchRoot,
     exclude: ["**/node_modules/**", "**/.git/**"],
   })) {
-    return path.dirname(path.join(repo, entry));
+    return path.dirname(path.join(searchRoot, entry));
   }
-  throw new Error(`ImageCropper was not found under ${repo}`);
+  throw new Error(`ImageCropper was not found under ${searchRoot}`);
 }
 
 async function clearPngFiles(directory: string) {
@@ -27,12 +36,12 @@ async function clearPngFiles(directory: string) {
 }
 
 async function ensureVenv(root: string) {
-  const venv = venvDir();
-  const python = venvPython(venv);
+  const venv = imageCropperVenvDir();
+  const python = imageCropperVenvPython(venv);
   const marker = path.join(venv, ".deps-installed");
-  if (await fileExists(marker)) return python;
+  if (await isRegularFile(marker)) return python;
 
-  if (!(await fileExists(python))) {
+  if (!(await isRegularFile(python))) {
     log({
       level: "info",
       message: "Creating the ImageCropper Python environment",
@@ -40,7 +49,7 @@ async function ensureVenv(root: string) {
     });
     await mkdir(path.dirname(venv), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(pythonExecutable(), ["-m", "venv", venv], {
+      const child = spawn(systemPythonExecutable(), ["-m", "venv", venv], {
         stdio: ["ignore", "pipe", "pipe"],
       });
       let stderr = "";
@@ -104,7 +113,8 @@ export function parseImageCropperOutput(output: string): CroppedScreenshot {
 
 export async function runImageCropper(root: string, image: string) {
   const main = path.join(root, "main.py");
-  if (!(await fileExists(main))) throw new Error(`ImageCropper main.py was not found in ${root}`);
+  if (!(await isRegularFile(main)))
+    throw new Error(`ImageCropper main.py was not found in ${root}`);
 
   const python = await ensureVenv(root);
 
