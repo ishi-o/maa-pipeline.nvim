@@ -15,30 +15,30 @@ import {
 } from "@nekosu/maa-pipeline-manager";
 
 import {
-  escaped,
-  fileUriPath,
-  hsv2rgb,
-  markdownText,
-  nodeRange,
-  normalizePath,
-  offsetRange,
-  pathUri,
-  range,
-  sourceDocument,
-  textDocument,
+  jsonStringValue,
+  filePathFromUri,
+  hsvToRgb,
+  markdownInlineText,
+  rangeFromNode,
+  absolutePath,
+  rangeFromLocation,
+  fileUri,
+  rangeFromOffsets,
+  loadSourceDocument,
+  createTextDocument,
 } from "./utils.ts";
 
 function interfaceFile(project: any, file: string) {
-  const rel = path.relative(project.root, normalizePath(file)).replaceAll(path.sep, "/");
+  const rel = path.relative(project.root, absolutePath(file)).replaceAll(path.sep, "/");
   return (
-    normalizePath(file) === normalizePath(project.bundle.file) ||
+    absolutePath(file) === absolutePath(project.bundle.file) ||
     project.bundle.importFiles.includes(rel) ||
     project.bundle.langBundle.langs.some((lang) => lang.file === rel)
   );
 }
 
 export function context(project: any, document: any, position: any): any {
-  const file = fileUriPath(document.uri);
+  const file = filePathFromUri(document.uri);
   if (!file) return null;
   const located = project.bundle.locateLayer(file);
   if (!located) return null;
@@ -75,9 +75,9 @@ export function context(project: any, document: any, position: any): any {
 }
 
 function infoLocation(project: any, info: any) {
-  return sourceDocument(project, info.file).then((document) => ({
-    uri: pathUri(info.file),
-    range: nodeRange(document, info.location),
+  return loadSourceDocument(project, info.file).then((document) => ({
+    uri: fileUri(info.file),
+    range: rangeFromNode(document, info.location),
   }));
 }
 
@@ -260,8 +260,12 @@ export async function definition(project: any, document: any, position: any) {
     }
     return Promise.all(
       uniqueInfos(infos).map(async (info) => ({
-        uri: pathUri(info.file),
-        range: range(await sourceDocument(project, info.file), info.offset, info.length),
+        uri: fileUri(info.file),
+        range: rangeFromOffsets(
+          await loadSourceDocument(project, info.file),
+          info.offset,
+          info.length,
+        ),
       })),
     );
   }
@@ -292,8 +296,12 @@ export async function references(project: any, document: any, position: any) {
     ]);
     return Promise.all(
       uniqueInfos(infos).map(async (info) => ({
-        uri: pathUri(info.file),
-        range: range(await sourceDocument(project, info.file), info.offset, info.length),
+        uri: fileUri(info.file),
+        range: rangeFromOffsets(
+          await loadSourceDocument(project, info.file),
+          info.offset,
+          info.length,
+        ),
       })),
     );
   }
@@ -350,10 +358,10 @@ function interfaceCompletion(project, document, ref) {
       .filter((decl) => decl.type === ref.type && decl.option === ref.option)
       .map((decl) => decl.name);
   }
-  const editRange = offsetRange(document, ref.location, -1, 1);
+  const editRange = rangeFromLocation(document, ref.location, -1, 1);
   return [...new Set(values)].map((value) =>
     item(value, CompletionItemKind.Reference, editRange, {
-      newText: escaped(value),
+      newText: jsonStringValue(value),
     }),
   );
 }
@@ -388,7 +396,8 @@ function maaCompletion(project, document, position, current, ref) {
   if (ref.type === "task.maa.base_task") {
     if (current.offset === ref.location.offset + 1 || /[@a-zA-Z0-9_-]/.test(lastChar ?? "")) {
       const editRange =
-        wordRange() ?? offsetRange(document, ref.location, current.offset - ref.location.offset, 1);
+        wordRange() ??
+        rangeFromLocation(document, ref.location, current.offset - ref.location.offset, 1);
       return current.layer
         .getTaskList()
         .map((task) => taskItem(project, task, editRange, `1_${task}`, ref.belong));
@@ -434,7 +443,7 @@ export function completion(project: any, document: any, position: any): any {
     const declared = decls
       .filter((decl) => decl.type === "task.anchor" && decl.belong === current.decl.belong)
       .map((decl) => decl.anchor);
-    const editRange = offsetRange(document, current.decl.location, -1, 1);
+    const editRange = rangeFromLocation(document, current.decl.location, -1, 1);
     return [...new Set(layer.getAnchorList().map(([anchor]: any) => anchor))]
       .filter((anchor: any) => !declared.includes(anchor))
       .map((anchor: any) =>
@@ -448,7 +457,7 @@ export function completion(project: any, document: any, position: any): any {
   if (!ref) return null;
   if (project.bundle.maa) return maaCompletion(project, document, position, current, ref);
 
-  const taskRange = offsetRange(document, ref.location, -1, 1);
+  const taskRange = rangeFromLocation(document, ref.location, -1, 1);
   const tasks = () => layer.getTaskList().map((task) => taskItem(project, task, taskRange));
   const anchors = (editRange: any) =>
     [...new Set(layer.getAnchorList().map(([anchor]: any) => anchor))].map((anchor: any) =>
@@ -480,7 +489,7 @@ export function completion(project: any, document: any, position: any): any {
     ref.type === "task.roi" ||
     ref.type === "task.target"
   ) {
-    const editRange = offsetRange(document, ref.location, -1, 1 + ref.attrs.offset);
+    const editRange = rangeFromLocation(document, ref.location, -1, 1 + ref.attrs.offset);
     const prefixRange = { start: editRange.start, end: editRange.start };
     const result = [];
     if (ref.type === "task.next" && !ref.attrs.attrs.JumpBack) {
@@ -545,10 +554,10 @@ export function completion(project: any, document: any, position: any): any {
   }
 
   if (ref.type === "task.locale") {
-    const editRange = offsetRange(document, ref.location, -1, 2);
+    const editRange = rangeFromLocation(document, ref.location, -1, 2);
     return project.bundle.langBundle.allKeys().map((key) =>
       item(key, CompletionItemKind.Constant, editRange, {
-        newText: escaped(key),
+        newText: jsonStringValue(key),
         data: { type: "locale", root: project.root, key },
       }),
     );
@@ -566,9 +575,9 @@ export async function localeHover(project, key) {
       const lang = bundle.langs[index];
       if (!entry) return `| ${lang?.name ?? index} | <missing> |`;
       const file = path.join(project.root, lang.file);
-      const source = await sourceDocument(project, file);
+      const source = await loadSourceDocument(project, file);
       const line = source.positionAt(entry.keyNode.offset).line + 1;
-      return `| [${lang.name}](${pathUri(file)}#L${line}) | ${markdownText(entry.value)} |`;
+      return `| [${lang.name}](${fileUri(file)}#L${line}) | ${markdownInlineText(entry.value)} |`;
     }),
   );
   return `| locale | value |\n| --- | --- |\n${rows.join("\n")}`;
@@ -607,13 +616,13 @@ function imageHover(project, layer, image) {
       ).length;
       const folder = path.join(sourceLayer.root, "image", normalized);
       content.push(
-        `[${path.relative(project.root, folder) || "."}](${pathUri(folder)}) — ${count} images`,
+        `[${path.relative(project.root, folder) || "."}](${fileUri(folder)}) — ${count} images`,
       );
     }
   } else {
     for (const [sourceLayer, full, relative] of layer.getImage(image)) {
       const label = path.relative(project.root, sourceLayer.root) || ".";
-      content.push(`${label} — [${relative}](${pathUri(full)})\n\n![](${pathUri(full)})`);
+      content.push(`${label} — [${relative}](${fileUri(full)})\n\n![](${fileUri(full)})`);
     }
   }
   return content.join("\n\n");
@@ -628,7 +637,7 @@ async function taskHover(project: any, layer: any, task: string, current?: any) 
       const key = `${info.file}\0${info.prop.offset}\0${info.prop.length}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const document = await sourceDocument(project, info.file);
+      const document = await loadSourceDocument(project, info.file);
       const text = document.getText().slice(info.prop.offset, info.data.offset + info.data.length);
       content.push(
         `${path.relative(project.root, source.layer.root) || "."}\n\n\`\`\`jsonc\n${text}\n\`\`\``,
@@ -749,8 +758,8 @@ export function documentLinks(project, document) {
         )
       ) {
         result.push({
-          range: nodeRange(document, ref.location),
-          target: pathUri(path.join(project.root, ref.target)),
+          range: rangeFromNode(document, ref.location),
+          target: fileUri(path.join(project.root, ref.target)),
         });
       }
     }
@@ -761,8 +770,8 @@ export function documentLinks(project, document) {
       /\.(md|png)$/.test(ref.target)
     ) {
       result.push({
-        range: nodeRange(document, ref.location),
-        target: pathUri(path.join(project.bundle.topLayer.root, ref.target)),
+        range: rangeFromNode(document, ref.location),
+        target: fileUri(path.join(project.bundle.topLayer.root, ref.target)),
       });
       continue;
     }
@@ -773,8 +782,8 @@ export function documentLinks(project, document) {
       const sourceLayer = project.bundle.topLayer.getImageFolders().get(normalized)?.[0];
       if (sourceLayer) {
         result.push({
-          range: nodeRange(document, ref.location),
-          target: pathUri(path.join(sourceLayer.root, "image", normalized)),
+          range: rangeFromNode(document, ref.location),
+          target: fileUri(path.join(sourceLayer.root, "image", normalized)),
         });
       }
       continue;
@@ -782,8 +791,8 @@ export function documentLinks(project, document) {
     const image = project.bundle.topLayer.getImage(ref.target)[0];
     if (image)
       result.push({
-        range: nodeRange(document, ref.location),
-        target: pathUri(image[1]),
+        range: rangeFromNode(document, ref.location),
+        target: fileUri(image[1]),
       });
   }
   return result;
@@ -818,9 +827,9 @@ export function documentColors(project, document) {
     .filter((ref) => ref.file === current.file && ref.type === "task.color")
     .map((ref) => {
       const rgb =
-        ref.method === "hsv" ? hsv2rgb(ref.color[0], ref.color[1], ref.color[2]) : ref.color;
+        ref.method === "hsv" ? hsvToRgb(ref.color[0], ref.color[1], ref.color[2]) : ref.color;
       return {
-        range: nodeRange(document, ref.location),
+        range: rangeFromNode(document, ref.location),
         color: {
           red: rgb[0] / 255,
           green: rgb[1] / 255,
@@ -838,7 +847,7 @@ export function syntaxDiagnostics(document, parse, printParseErrorCode) {
     disallowComments: false,
   });
   return errors.map((error) => ({
-    range: range(document, error.offset, Math.max(error.length, 1)),
+    range: rangeFromOffsets(document, error.offset, Math.max(error.length, 1)),
     severity: DiagnosticSeverity.Error,
     source: "maa-pipeline",
     code: `json-${error.error}`,

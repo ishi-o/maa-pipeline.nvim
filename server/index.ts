@@ -37,7 +37,13 @@ import {
 import { ProjectManager } from "./project.ts";
 import { findImageCropper, runImageCropper } from "./image.ts";
 import { RuntimeClient, RuntimeSetupError } from "./client.ts";
-import { commandRoot, fileUriPath, moveFile, pathUri, sourceDocument } from "./utils.ts";
+import {
+  commandRootArgument,
+  filePathFromUri,
+  moveFileTo,
+  fileUri,
+  loadSourceDocument,
+} from "./utils.ts";
 
 const connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout);
 const documents = new TextDocuments(TextDocument);
@@ -50,7 +56,11 @@ function isControllerSetupFailure(error) {
 }
 
 function requestControllerSelection(project, task?: string) {
-  runtime.notify("warn", "The selected controller is no longer available; select it again", task);
+  runtime.log({
+    level: "warn",
+    message: "The selected controller is no longer available; select it again",
+    source: "maa-runtime",
+  });
   connection.sendNotification(notifications.configureController, {
     root: project.root,
     controller: project.controller,
@@ -63,7 +73,7 @@ function report(error) {
 }
 
 async function forDocument(document) {
-  const file = fileUriPath(document.uri);
+  const file = filePathFromUri(document.uri);
   if (!file || !projects) return null;
   const project = await projects.ensure(file);
   if (project) await project.refresh();
@@ -79,13 +89,13 @@ async function publish(project) {
         project.root,
         diagnostic,
         async (file, offset) => {
-          const document = await sourceDocument(project, file);
+          const document = await loadSourceDocument(project, file);
           const position = document.positionAt(offset);
           return [position.line, position.character];
         },
         {},
       );
-      const uri = pathUri(diagnostic.file);
+      const uri = fileUri(diagnostic.file);
       const list = byUri.get(uri) ?? [];
       list.push({
         range: {
@@ -101,7 +111,7 @@ async function publish(project) {
       byUri.set(uri, list);
     }
     for (const document of documents.all()) {
-      const file = fileUriPath(document.uri);
+      const file = filePathFromUri(document.uri);
       if (!file || !project.isInside(file)) continue;
       const diagnostics = syntaxDiagnostics(document, parse, printParseErrorCode);
       if (diagnostics.length)
@@ -139,17 +149,17 @@ async function saveScreenshot(project, token, name) {
   const directory = path.join(activeResourceRoot(project), "debug", "screenshot");
   await mkdir(directory, { recursive: true });
   const file = path.join(directory, `${name}.png`);
-  await moveFile(screenshot.file, file);
+  await moveFileTo(screenshot.file, file);
   return { path: file, roi: screenshot.roi };
 }
 
 connection.onInitialize((params) => {
   const options = params.initializationOptions ?? {};
   const roots = (params.workspaceFolders ?? [])
-    .map((item) => fileUriPath(item.uri))
+    .map((item) => filePathFromUri(item.uri))
     .filter(Boolean);
   if (!roots.length && params.rootUri) {
-    const root = fileUriPath(params.rootUri);
+    const root = filePathFromUri(params.rootUri);
     if (root) roots.push(root);
   }
   setLocale(options.locale === "zh" ? "zh" : "en");
@@ -162,6 +172,7 @@ connection.onInitialize((params) => {
     ...options.runtime,
     locale: options.locale,
   });
+  globalThis.maaPipelineRuntime = runtime;
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -186,7 +197,7 @@ connection.onInitialize((params) => {
 
 documents.onDidOpen(async (event) => {
   try {
-    const file = fileUriPath(event.document.uri);
+    const file = filePathFromUri(event.document.uri);
     const project = file && (await projects?.ensure(file));
     if (!project) return;
     project.setDocument(file, event.document.getText(), event.document.version);
@@ -198,7 +209,7 @@ documents.onDidOpen(async (event) => {
 
 documents.onDidChangeContent((event) => {
   void (async () => {
-    const file = fileUriPath(event.document.uri);
+    const file = filePathFromUri(event.document.uri);
     const project = file && (await projects?.ensure(file));
     if (!project) return;
     project.setDocument(file, event.document.getText(), event.document.version);
@@ -208,7 +219,7 @@ documents.onDidChangeContent((event) => {
 
 documents.onDidClose((event) => {
   void (async () => {
-    const file = fileUriPath(event.document.uri);
+    const file = filePathFromUri(event.document.uri);
     const project = file && projects?.loaded(file);
     if (!project) return;
     project.setDocument(file, undefined, event.document.version);
@@ -364,9 +375,9 @@ const projectCommandHandlers = {
   },
   [commands.showReferences]: async ({ project, args }) => {
     const [, uri, position] = args;
-    const file = fileUriPath(uri);
+    const file = filePathFromUri(uri);
     if (!file || !position) return null;
-    const document = documents.get(uri) ?? (await sourceDocument(project, file));
+    const document = documents.get(uri) ?? (await loadSourceDocument(project, file));
     const locations = await references(project, document, position);
     connection.sendNotification(notifications.showReferences, {
       uri,
@@ -397,7 +408,11 @@ const projectCommandHandlers = {
         requestControllerSelection(project, args[1]);
         return;
       }
-      runtime.notify("error", error instanceof Error ? error.message : String(error), args[1]);
+      runtime.log({
+        level: "error",
+        message: error instanceof Error ? error.message : String(error),
+        source: "maa-runtime",
+      });
     });
     return null;
   },
@@ -435,7 +450,7 @@ connection.onExecuteCommand(async (params) => {
   const globalHandler = globalCommandHandlers[params.command];
   if (globalHandler) return globalHandler(args);
 
-  const root = commandRoot(args);
+  const root = commandRootArgument(args);
   const project = root && projects?.byRoot(root);
   if (!project) return null;
   await project.refresh();
@@ -445,6 +460,7 @@ connection.onExecuteCommand(async (params) => {
 connection.onShutdown(async () => {
   await runtime?.shutdown();
   await projects?.stop();
+  globalThis.maaPipelineRuntime = undefined;
 });
 
 documents.listen(connection);

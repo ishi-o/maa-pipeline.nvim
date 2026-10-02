@@ -19,15 +19,16 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
-import { encode, formatSize, pngSize } from "./utils.ts";
+import { encodeBase64Json, formatByteSize, pngDimensions } from "./utils.ts";
+import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
 import type {
   ActiveTask,
   AgentProcess,
   RuntimeConnection,
-  RuntimeLogLevel,
   RuntimeOptions,
   RuntimeProject,
   RuntimeSetupResult,
+  RuntimeLogPayload,
 } from "./types.ts";
 
 const runtimeScript = path.join(__dirname, "maa-runtime.mjs");
@@ -135,12 +136,24 @@ export class RuntimeClient {
     };
   }
 
-  notify(level: RuntimeLogLevel, message: string, task?: string) {
-    this.connection.sendNotification("maa-pipeline/runtimeLog", {
-      level,
-      message,
-      task,
-    });
+  log(payload: RuntimeLogPayload) {
+    const source = payload.source ?? "maa-runtime";
+    try {
+      const entry = parseLogLine(formatRuntimeLogLine({ ...payload, source }));
+      if (!entry) return;
+      this.connection.sendNotification("maa-pipeline/runtimeLog", {
+        level: payload.level,
+        message: payload.message,
+        source,
+        entry,
+      });
+    } catch {
+      this.connection.sendNotification("maa-pipeline/runtimeLog", {
+        level: payload.level,
+        message: payload.message,
+        source,
+      });
+    }
   }
 
   async prepare() {
@@ -171,10 +184,14 @@ export class RuntimeClient {
     const progress = (step: string) => {
       const label = labels[step] ?? step;
       if (step === "download-scripts" || step === "download-binary") manager.downloadLabel = label;
-      this.notify("info", label);
+      this.log({ level: "info", message: label, source: "maa-runtime" });
     };
     manager.downloadProgress = (bytes: number) =>
-      this.notify("info", `${manager.downloadLabel} (${formatSize(bytes)})`);
+      this.log({
+        level: "info",
+        message: `${manager.downloadLabel} (${formatByteSize(bytes)})`,
+        source: "maa-runtime",
+      });
 
     const prepared = await manager.prepare(version, progress);
     if (!prepared) throw new Error(`Failed to prepare MaaFramework ${version}`);
@@ -224,7 +241,7 @@ export class RuntimeClient {
 
     const runtimeArgs = [
       runtimeScript,
-      encode({
+      encodeBase64Json({
         id,
         port: address.port,
         module: this.manager!.moduleFolder(this.options.resolvedVersion!),
@@ -247,8 +264,12 @@ export class RuntimeClient {
         )
       : spawn(process.execPath, runtimeArgs, { stdio: ["ignore", "pipe", "pipe"] });
     this.process = elevated ? null : child;
-    child.stdout?.on("data", (data) => this.notify("info", data.toString().trim()));
-    child.stderr?.on("data", (data) => this.notify("error", data.toString().trim()));
+    child.stdout?.on("data", (data) =>
+      this.log({ level: "info", message: data.toString().trim(), source: "maa-runtime" }),
+    );
+    child.stderr?.on("data", (data) =>
+      this.log({ level: "error", message: data.toString().trim(), source: "maa-runtime" }),
+    );
     if (elevated) {
       child.once("exit", (code) => {
         if (code === 0) return;
@@ -266,7 +287,11 @@ export class RuntimeClient {
     });
     child.once("exit", (code) => {
       if (this.process !== child) return;
-      this.notify(code === 0 ? "info" : "error", `Maa server exited with code ${code}`);
+      this.log({
+        level: code === 0 ? "info" : "error",
+        message: `Maa server exited with code ${code}`,
+        source: "maa-runtime",
+      });
       if (!this.rpc) {
         clearTimeout(connectionTimer);
         rejectConnection(new Error(`Maa server exited with code ${code}`));
@@ -291,17 +316,53 @@ export class RuntimeClient {
   }
 
   bind(rpc: MessageConnection) {
-    rpc.onNotification(logNoti, (level, message) => this.notify(level, message));
+    rpc.onNotification(logNoti, (level, message) => {
+      const source = "maa-runtime";
+      let entry: unknown = null;
+      try {
+        entry = parseLogLine(`[${level}] ${message}`, source) ?? null;
+      } catch {
+        // entry stays null
+      }
+      this.connection.sendNotification("maa-pipeline/runtimeLog", {
+        level,
+        message,
+        source,
+        entry,
+      });
+    });
     rpc.onRequest(subToHostReq, async (method, args) => {
       if (method === "pushNotify") {
-        this.notify("info", JSON.stringify(args[1]), this.active?.task);
+        const source = "maa-runtime";
+        let body: string;
+        try {
+          body = JSON.stringify(args[1]);
+        } catch {
+          body = String(args[1]);
+        }
+        let entry: unknown = null;
+        try {
+          entry = parseLogLine(`[info] ${body}`, source) ?? null;
+        } catch {
+          // entry stays null
+        }
+        this.connection.sendNotification("maa-pipeline/runtimeLog", {
+          level: "info",
+          message: body,
+          source,
+          entry,
+        });
         return null;
       }
       if (method === "startTask")
         return this.startAgent(...(args as [string, string[], string, Record<string, string>]));
       if (method === "stopAgent") return this.stopAgent(args[0]);
       if (method === "startDebugSession") {
-        this.notify("error", "Debug-session agents require VS Code and are not supported");
+        this.log({
+          level: "error",
+          message: "Debug-session agents require VS Code and are not supported",
+          source: "maa-runtime",
+        });
         return null;
       }
       if (method === "quickPick") {
@@ -451,7 +512,11 @@ export class RuntimeClient {
     const id = randomUUID();
     const name = path.basename(exec, path.extname(exec));
     const daemon = this.options.daemon || this.agentOptions.get(exec) === true;
-    this.notify("info", `Starting external ${daemon ? "daemon " : ""}agent ${name}`);
+    this.log({
+      level: "info",
+      message: `Starting external ${daemon ? "daemon " : ""}agent ${name}`,
+      source: name,
+    });
     this.failedAgents.delete(name);
 
     const agent = await resolveAgent(exec, cwd);
@@ -486,10 +551,18 @@ export class RuntimeClient {
     });
     this.agents.set(id, { name, child, daemon });
     child.once("spawn", () => {
-      this.notify("info", `External agent ${name} started (${agent.executable})`);
+      this.log({
+        level: "info",
+        message: `External agent ${name} started (${agent.executable})`,
+        source: name,
+      });
     });
-    child.stdout?.on("data", (data) => this.notify("info", data.toString().trim()));
-    child.stderr?.on("data", (data) => this.notify("error", data.toString().trim()));
+    child.stdout?.on("data", (data) =>
+      this.log({ level: "info", message: data.toString().trim(), source: name }),
+    );
+    child.stderr?.on("data", (data) =>
+      this.log({ level: "error", message: data.toString().trim(), source: name }),
+    );
     const stopUpstream = () => {
       if (!this.rpc) return;
       void this.request("agentStopped", id).catch(() => {});
@@ -498,10 +571,11 @@ export class RuntimeClient {
       if (!this.agents.delete(id)) return;
       if (daemon) {
         if (code === 0) {
-          this.notify(
-            "info",
-            `External daemon agent launcher ${name} exited; waiting for its service`,
-          );
+          this.log({
+            level: "info",
+            message: `External daemon agent launcher ${name} exited; waiting for its service`,
+            source: name,
+          });
           return;
         }
         this.failedAgents.add(name);
@@ -513,13 +587,21 @@ export class RuntimeClient {
           : signal
             ? `with signal ${signal}`
             : "without an exit status";
-      this.notify("error", `External agent ${name} failed: exited ${reason}`);
+      this.log({
+        level: "error",
+        message: `External agent ${name} failed: exited ${reason}`,
+        source: name,
+      });
       stopUpstream();
     };
     child.once("error", (error) => {
       if (!this.agents.delete(id)) return;
       this.failedAgents.add(name);
-      this.notify("error", `External agent ${name} failed to start: ${error.message}`);
+      this.log({
+        level: "error",
+        message: `External agent ${name} failed to start: ${error.message}`,
+        source: name,
+      });
       stopUpstream();
     });
     child.once("exit", stopped);
@@ -530,7 +612,11 @@ export class RuntimeClient {
     const agent = this.agents.get(id);
     if (!agent) return;
     this.agents.delete(id);
-    this.notify("info", `Stopping external agent ${agent.name}`);
+    this.log({
+      level: "info",
+      message: `Stopping external agent ${agent.name}`,
+      source: agent.name,
+    });
     agent.child.kill();
   }
 
@@ -564,10 +650,11 @@ export class RuntimeClient {
       const failedAgents = [...this.failedAgents];
       if (failedAgents.length) {
         this.failedAgents.clear();
-        this.notify(
-          "error",
-          `External agents failed to start; the task will not run: ${failedAgents.join(", ")}`,
-        );
+        this.log({
+          level: "error",
+          message: `External agents failed to start; the task will not run: ${failedAgents.join(", ")}`,
+          source: "maa-runtime",
+        });
       }
     }
 
@@ -577,7 +664,7 @@ export class RuntimeClient {
   async run(project: RuntimeProject, task: string) {
     if (this.running) throw new Error(`Task ${this.running} is already running`);
     this.running = task;
-    this.notify("info", `Starting task ${task}`, task);
+    this.log({ level: "info", message: `Starting task ${task}`, source: "maa-runtime" });
     try {
       await this.ensure();
       const setup = await this.setup(project);
@@ -586,11 +673,11 @@ export class RuntimeClient {
       this.active = { handle: setup.handle, task };
       try {
         const succeeded = await this.request("postTask", setup.handle, task, []);
-        this.notify(
-          succeeded ? "info" : "error",
-          `Task ${task} ${succeeded ? "finished" : "failed"}`,
-          task,
-        );
+        this.log({
+          level: succeeded ? "info" : "error",
+          message: `Task ${task} ${succeeded ? "finished" : "failed"}`,
+          source: "maa-runtime",
+        });
       } finally {
         if (!this.options.daemon) {
           await this.request("destroyInstance", setup.handle).catch(() => {});
@@ -606,13 +693,13 @@ export class RuntimeClient {
     if (this.active) {
       const image = await this.request<string>("getScreencap", this.active.handle);
       if (!image) throw new Error("Failed to take screenshot");
-      const size = pngSize(image);
+      const size = pngDimensions(image);
       return { image, roi: [0, 0, size.width, size.height] };
     }
     if (this.running) throw new Error(`Task ${this.running} is still starting`);
 
     this.running = "screenshot";
-    this.notify("info", "Taking screenshot");
+    this.log({ level: "info", message: "Taking screenshot", source: "maa-runtime" });
     let handle;
     try {
       await this.ensure();
@@ -621,7 +708,7 @@ export class RuntimeClient {
       if (!handle) throw new RuntimeSetupError(setup?.error ?? "Failed to create Maa instance");
       const image = await this.request<string>("getScreencap", handle);
       if (!image) throw new Error("Failed to take screenshot");
-      const size = pngSize(image);
+      const size = pngDimensions(image);
       return { image, roi: [0, 0, size.width, size.height] };
     } finally {
       if (handle && !this.options.daemon) {
@@ -633,13 +720,18 @@ export class RuntimeClient {
 
   async stop() {
     if (!this.active) {
-      this.notify(
-        "warn",
-        this.running ? `Task ${this.running} is still starting` : "No Maa task is running",
-      );
+      this.log({
+        level: "warn",
+        message: this.running ? `Task ${this.running} is still starting` : "No Maa task is running",
+        source: "maa-runtime",
+      });
       return;
     }
-    this.notify("info", `Stopping task ${this.active.task}`, this.active.task);
+    this.log({
+      level: "info",
+      message: `Stopping task ${this.active.task}`,
+      source: "maa-runtime",
+    });
     await this.request("postStop", this.active.handle);
   }
 

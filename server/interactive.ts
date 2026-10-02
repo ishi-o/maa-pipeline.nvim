@@ -6,7 +6,13 @@ import { extractTaskRef } from "@nekosu/maa-pipeline-manager";
 
 import { commands } from "./commands.ts";
 import { context } from "./features.ts";
-import { fileUriPath, nodeRange, pathUri, sourceDocument, textDocument } from "./utils.ts";
+import {
+  filePathFromUri,
+  rangeFromNode,
+  fileUri,
+  loadSourceDocument,
+  createTextDocument,
+} from "./utils.ts";
 import type { MaaProject } from "./types.ts";
 
 export { commands };
@@ -22,12 +28,12 @@ export const notifications = {
   requestInput: "maa-pipeline/requestInput",
 };
 
-function lens(range, title, command = commands.noop, args = []) {
-  return { range, command: { title, command, arguments: args } };
+function lens(rangeFromOffsets, title, command = commands.noop, args = []) {
+  return { rangeFromOffsets, command: { title, command, arguments: args } };
 }
 
 export function codeLenses(project: MaaProject, document) {
-  const file = fileUriPath(document.uri);
+  const file = filePathFromUri(document.uri);
   if (!file) return [];
   const located = project.bundle.locateLayer(file);
   if (!located) return [];
@@ -35,30 +41,35 @@ export function codeLenses(project: MaaProject, document) {
   const result = [];
 
   for (const decl of project.bundle.info.decls.filter((info) => info.file === normalizedFile)) {
-    const range = nodeRange(document, decl.location);
+    const rangeFromOffsets = rangeFromNode(document, decl.location);
     if (decl.type === "interface.resource") {
       const active = decl.name === project.resource;
       const disabled = decl.controller && !decl.controller.includes(project.controller);
-      if (active) result.push(lens(range, t("maa.pipeline.codelens.resource-activated")));
-      else if (disabled) result.push(lens(range, t("maa.pipeline.codelens.resource-disabled")));
+      if (active)
+        result.push(lens(rangeFromOffsets, t("maa.pipeline.codelens.resource-activated")));
+      else if (disabled)
+        result.push(lens(rangeFromOffsets, t("maa.pipeline.codelens.resource-disabled")));
       else
         result.push(
-          lens(range, t("maa.pipeline.codelens.resource-switch"), commands.switchConfig, [
-            project.root,
-            "resource",
-            decl.name,
-          ]),
+          lens(
+            rangeFromOffsets,
+            t("maa.pipeline.codelens.resource-switch"),
+            commands.switchConfig,
+            [project.root, "resource", decl.name],
+          ),
         );
     } else if (decl.type === "interface.language") {
       const active = decl.name === project.locale;
-      if (active) result.push(lens(range, t("maa.pipeline.codelens.language-activated")));
+      if (active)
+        result.push(lens(rangeFromOffsets, t("maa.pipeline.codelens.language-activated")));
       else
         result.push(
-          lens(range, t("maa.pipeline.codelens.language-switch"), commands.switchConfig, [
-            project.root,
-            "__locale",
-            decl.name,
-          ]),
+          lens(
+            rangeFromOffsets,
+            t("maa.pipeline.codelens.language-switch"),
+            commands.switchConfig,
+            [project.root, "__locale", decl.name],
+          ),
         );
     }
   }
@@ -77,11 +88,11 @@ export function codeLenses(project: MaaProject, document) {
   for (const [task, infos] of Object.entries<any[]>(layer.tasks)) {
     for (const info of infos) {
       if (info.file !== normalizedFile) continue;
-      const range = nodeRange(document, info.prop);
+      const rangeFromOffsets = rangeFromNode(document, info.prop);
       const position = document.positionAt(info.prop.offset + 1);
       if (project.bundle.maa) {
         result.push(
-          lens(range, t("maa.pipeline.codelens.eval-task"), commands.evaluateTask, [
+          lens(rangeFromOffsets, t("maa.pipeline.codelens.eval-task"), commands.evaluateTask, [
             project.root,
             task,
           ]),
@@ -89,7 +100,7 @@ export function codeLenses(project: MaaProject, document) {
       } else {
         result.push(
           lens(
-            range,
+            rangeFromOffsets,
             t("maa.pipeline.codelens.refs", `${counts.get(task) ?? 0}`),
             commands.showReferences,
             [project.root, document.uri, position],
@@ -131,10 +142,10 @@ export function inlayHints(project: MaaProject, document, requestedRange) {
 
 export async function localeWorkspaceEdit(project: MaaProject, request, key) {
   if (!key || project.bundle.langBundle.allKeys().includes(key)) return null;
-  const sourceFile = fileUriPath(request.uri);
+  const sourceFile = filePathFromUri(request.uri);
   if (!sourceFile) return null;
   const documentChanges = [];
-  const source = await sourceDocument(project, sourceFile);
+  const source = await loadSourceDocument(project, sourceFile);
   documentChanges.push({
     textDocument: { uri: request.uri, version: null },
     edits: [
@@ -148,9 +159,9 @@ export async function localeWorkspaceEdit(project: MaaProject, request, key) {
     ],
   });
   for (const action of project.bundle.langBundle.addPair(key, request.value)) {
-    const uri = pathUri(action.file);
+    const uri = fileUri(action.file);
     if (action.type === "replace") {
-      const document = textDocument(action.file, "");
+      const document = createTextDocument(action.file, "");
       documentChanges.push({
         kind: "create",
         uri,
@@ -169,7 +180,7 @@ export async function localeWorkspaceEdit(project: MaaProject, request, key) {
         ],
       });
     } else {
-      const document = await sourceDocument(project, action.file);
+      const document = await loadSourceDocument(project, action.file);
       const position = document.positionAt(action.offset);
       documentChanges.push({
         textDocument: { uri, version: null },
@@ -189,7 +200,7 @@ export async function configWorkspaceEdit(project: MaaProject, key: any, value?:
   const file = path.join(project.root, "config", "maa_pi_config.json");
   const previous = await project.loader.get(file);
   const text = previous ?? "{}\n";
-  const document = textDocument(file, text);
+  const document = createTextDocument(file, text);
   const changes = typeof key === "object" ? key : { [key]: value };
   let updated = text;
   for (const [name, next] of Object.entries(changes)) {
@@ -212,7 +223,7 @@ export async function configWorkspaceEdit(project: MaaProject, key: any, value?:
       newText: updated,
     },
   ];
-  const uri = pathUri(file);
+  const uri = fileUri(file);
   return previous == null
     ? {
         documentChanges: [

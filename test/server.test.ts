@@ -9,13 +9,13 @@ import { completion, definition, syntaxDiagnostics } from "#server/features.ts";
 import { parse, printParseErrorCode } from "jsonc-parser";
 import { codeActions, codeLenses, configWorkspaceEdit } from "#server/interactive.ts";
 import { resolveAgent, runtimeAgents } from "#server/agent.ts";
-import { parseImageCropperOutput } from "#server/image.ts";
+import { findImageCropper, parseImageCropperOutput } from "#server/image.ts";
 import { MaaProject } from "#server/project.ts";
-import { nodeRange, normalizePath, pathUri, textDocument } from "#server/utils.ts";
+import { rangeFromNode, absolutePath, fileUri, createTextDocument } from "#server/utils.ts";
 
 test("converts upstream parser offsets to LSP ranges", () => {
-  const document = textDocument("/tmp/pipeline.jsonc", '{\n  "Task": {}\n}\n');
-  assert.deepEqual(nodeRange(document, { offset: 4, length: 6 }), {
+  const document = createTextDocument("/tmp/pipeline.jsonc", '{\n  "Task": {}\n}\n');
+  assert.deepEqual(rangeFromNode(document, { offset: 4, length: 6 }), {
     start: { line: 1, character: 2 },
     end: { line: 1, character: 8 },
   });
@@ -23,9 +23,9 @@ test("converts upstream parser offsets to LSP ranges", () => {
 
 test("normalizes project paths and emits file URIs", () => {
   const raw = path.join(os.tmpdir(), "maa", "..", "maa", "project.json");
-  const file = normalizePath(raw);
+  const file = absolutePath(raw);
   assert.equal(file, path.normalize(path.resolve(raw)));
-  assert.equal(pathUri(file), pathToFileURL(file).toString());
+  assert.equal(fileUri(file), pathToFileURL(file).toString());
 });
 
 test("resolves agents from ancestor install directories", {}, async (t) => {
@@ -62,8 +62,21 @@ test("parses ImageCropper output", () => {
   );
 });
 
+test("finds ImageCropper from a project inside a Git repository", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "maa-image-cropper-test-"));
+  const project = path.join(root, "assets");
+  const cropper = path.join(root, "ImageCropper");
+  await mkdir(path.join(root, ".git"));
+  await mkdir(project, { recursive: true });
+  await mkdir(cropper, { recursive: true });
+  await writeFile(path.join(cropper, "main.py"), "");
+  t.after(async () => rm(root, { recursive: true, force: true }));
+
+  assert.equal(await findImageCropper(project), cropper);
+});
+
 test("treats every supported file extension as JSONC", () => {
-  const document = textDocument("/tmp/pipeline.json", '{\n  // comment\n  "Task": {},\n}\n');
+  const document = createTextDocument("/tmp/pipeline.json", '{\n  // comment\n  "Task": {},\n}\n');
   assert.equal(document.languageId, "jsonc");
   assert.deepEqual(syntaxDiagnostics(document, parse, printParseErrorCode), []);
 });
@@ -95,7 +108,7 @@ test("uses the upstream manager for MaaFramework language features", async (t) =
   });
   await project.init();
 
-  const document = textDocument(file, source);
+  const document = createTextDocument(file, source);
   const offset = source.indexOf('"End"') + 2;
   const position = document.positionAt(offset);
   assert.deepEqual(project.bundle.topLayer.getTaskList(), ["Start", "End"]);
@@ -117,7 +130,7 @@ test("uses the upstream manager for MaaFramework language features", async (t) =
 
   const interfaceFile = path.join(root, "interface.json");
   const interfaceSource = await readFile(interfaceFile, "utf8");
-  const interfaceDocument = textDocument(interfaceFile, interfaceSource);
+  const interfaceDocument = createTextDocument(interfaceFile, interfaceSource);
   const controllerPosition = interfaceDocument.positionAt(interfaceSource.indexOf("Default") + 2);
   assert.ok(
     codeActions(project, interfaceDocument, {
