@@ -28,8 +28,8 @@ export const notifications = {
   requestInput: "maa-pipeline/requestInput",
 };
 
-function lens(rangeFromOffsets, title, command = commands.noop, args = []) {
-  return { rangeFromOffsets, command: { title, command, arguments: args } };
+function lens(range, title, command = commands.noop, args = []) {
+  return { range, command: { title, command, arguments: args } };
 }
 
 export function codeLenses(project: MaaProject, document) {
